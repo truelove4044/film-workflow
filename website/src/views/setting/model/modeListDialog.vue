@@ -135,7 +135,7 @@ const useTabList = computed(() => {
 const websites = ref<Record<string, string>>({
   deepSeek: "https://platform.deepseek.com",
   volcengine: "https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey",
-  kling: "https://app.klingai.com/cn/dev/api-key",
+  kling: "https://app.klingai.com/global/",
   zhipu: "https://bigmodel.cn/usercenter/proj-mgmt/apikeys",
   qwen: "https://bailian.console.aliyun.com/cn-beijing/?tab=model#/api-key",
   wan: "https://bailian.console.aliyun.com/cn-beijing/?tab=model#/api-key",
@@ -206,9 +206,8 @@ const manufacturerDefaultBaseUrls: Record<string, Record<string, string>> = {
   },
   kling: {
     text: "https://api.klingai.com",
-    image: "https://api-beijing.klingai.com/v1/images/omni-image",
-    video:
-      "https://api-beijing.klingai.com/v1/videos/image2video|https://api-beijing.klingai.com/v1/videos/text2video|https://api-beijing.klingai.com/v1/videos/text2video/{taskId}",
+    image: "https://api.klingai.com",
+    video: "https://api.klingai.com",
   },
   zhipu: {
     text: "https://open.bigmodel.cn/api/paas/v4",

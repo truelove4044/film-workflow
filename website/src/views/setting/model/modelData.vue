@@ -345,7 +345,7 @@ const editModelForm = ref<RowData>({
 const websites = ref<Record<string, string>>({
   deepSeek: "https://platform.deepseek.com",
   volcengine: "https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey",
-  kling: "https://app.klingai.com/cn/dev/api-key",
+  kling: "https://app.klingai.com/global/",
   zhipu: "https://bigmodel.cn/usercenter/proj-mgmt/apikeys",
   qwen: "https://bailian.console.aliyun.com/cn-beijing/?tab=model#/api-key",
   wan: "https://bailian.console.aliyun.com/cn-beijing/?tab=model#/api-key",

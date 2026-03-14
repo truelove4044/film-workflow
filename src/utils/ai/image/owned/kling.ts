@@ -4,6 +4,8 @@ import jwt from "jsonwebtoken";
 import u from "@/utils";
 import { pollTask } from "@/utils/ai/utils";
 
+const DEFAULT_KLING_IMAGE_ENDPOINT = "https://api.klingai.com/v1/images/omni-image";
+
 function generateJwtToken(ak: string, sk: string): string {
   const now = Math.floor(Date.now() / 1000);
   const payload = {
@@ -31,6 +33,51 @@ function getApiToken(apiKey: string): string {
   return trimmedKey;
 }
 
+function trimTrailingSlashes(value: string): string {
+  return value.replace(/\/+$/, "");
+}
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function resolveImageEndpoints(baseURL?: string): { createUrl: string; queryTemplate: string } {
+  const parts = (baseURL ?? "")
+    .split("|")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  const createCandidate = parts[0];
+  if (!createCandidate || !isHttpUrl(createCandidate)) {
+    return {
+      createUrl: DEFAULT_KLING_IMAGE_ENDPOINT,
+      queryTemplate: `${DEFAULT_KLING_IMAGE_ENDPOINT}/{taskId}`,
+    };
+  }
+
+  const createParsedUrl = new URL(createCandidate);
+  const createPath = createParsedUrl.pathname.replace(/\/+$/, "");
+  if (createPath === "" || createPath === "/" || createPath === "/v1" || createPath === "/v1/images") {
+    createParsedUrl.pathname = "/v1/images/omni-image";
+  }
+  const createUrl = trimTrailingSlashes(createParsedUrl.toString());
+
+  const queryCandidate = parts[1];
+  if (!queryCandidate || !isHttpUrl(queryCandidate)) {
+    return { createUrl, queryTemplate: `${createUrl}/{taskId}` };
+  }
+
+  const queryTemplate = queryCandidate.includes("{taskId}")
+    ? trimTrailingSlashes(queryCandidate)
+    : `${trimTrailingSlashes(queryCandidate)}/{taskId}`;
+  return { createUrl, queryTemplate };
+}
+
 async function processImages(imageBase64: string[]): Promise<Array<{ image: string }>> {
   let images = imageBase64.filter((img) => img?.trim());
   if (images.length === 0) return [];
@@ -55,7 +102,7 @@ export default async (input: ImageConfig, config: AIConfig): Promise<string> => 
   if (!input.prompt) throw new Error("缺少提示词，prompt为必填项");
 
   const authorization = `Bearer ${getApiToken(config.apiKey)}`;
-  const baseURL = (config.baseURL ?? "https://api-beijing.klingai.com/v1/images/omni-image").replace(/\/+$/, "");
+  const { createUrl, queryTemplate } = resolveImageEndpoints(config.baseURL);
   const imageList = await processImages(input.imageBase64);
 
   const body: Record<string, any> = {
@@ -72,7 +119,7 @@ export default async (input: ImageConfig, config: AIConfig): Promise<string> => 
   };
 
   try {
-    const { data: createData } = await axios.post(baseURL, body, { headers });
+    const { data: createData } = await axios.post(createUrl, body, { headers });
 
     if (createData.code !== 0) {
       throw new Error(createData.message || "创建任务失败");
@@ -81,7 +128,7 @@ export default async (input: ImageConfig, config: AIConfig): Promise<string> => 
     const taskId = createData.data?.task_id;
     if (!taskId) throw new Error("未获取到任务ID");
 
-    const queryUrl = `${baseURL}/${taskId}`;
+    const queryUrl = queryTemplate.replace("{taskId}", taskId);
     return await pollTask(async () => {
       const { data: queryData } = await axios.get(queryUrl, { headers });
 

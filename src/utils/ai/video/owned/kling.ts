@@ -1,20 +1,119 @@
 import "../type";
 import axios from "axios";
-import { pollTask, validateVideoConfig } from "@/utils/ai/utils";
+import jwt from "jsonwebtoken";
+import { pollTask } from "@/utils/ai/utils";
+
+const DEFAULT_KLING_VIDEO_ORIGIN = "https://api.klingai.com";
+
+function generateJwtToken(ak: string, sk: string): string {
+  const now = Math.floor(Date.now() / 1000);
+  const payload = {
+    iss: ak,
+    exp: now + 1800,
+    nbf: now - 5,
+  };
+  return jwt.sign(payload, sk, {
+    algorithm: "HS256",
+    header: { alg: "HS256", typ: "JWT" },
+  });
+}
+
+function getApiToken(apiKey: string): string {
+  const trimmedKey = apiKey.replace(/^Bearer\s+/i, "").trim();
+
+  if (trimmedKey.includes("|")) {
+    const parts = trimmedKey.split("|");
+    if (parts.length !== 2 || !parts[0].trim() || !parts[1].trim()) {
+      throw new Error("API Key格式错误，请使用 ak|sk 格式");
+    }
+    return generateJwtToken(parts[0].trim(), parts[1].trim());
+  }
+
+  return trimmedKey;
+}
+
+function trimTrailingSlashes(value: string): string {
+  return value.replace(/\/+$/, "");
+}
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function normalizeVideoCreateUrl(rawUrl: string, type: "image2video" | "text2video"): string {
+  if (!isHttpUrl(rawUrl)) {
+    return `${DEFAULT_KLING_VIDEO_ORIGIN}/v1/videos/${type}`;
+  }
+
+  const parsedUrl = new URL(rawUrl);
+  const path = parsedUrl.pathname.replace(/\/+$/, "");
+  if (path === "" || path === "/" || path === "/v1" || path === "/v1/videos") {
+    parsedUrl.pathname = `/v1/videos/${type}`;
+    return trimTrailingSlashes(parsedUrl.toString());
+  }
+
+  if (/\/(image2video|text2video)$/i.test(path)) {
+    return trimTrailingSlashes(rawUrl).replace(/\/(image2video|text2video)$/i, `/${type}`);
+  }
+
+  return trimTrailingSlashes(parsedUrl.toString());
+}
+
+function resolveVideoEndpoints(baseURL?: string): {
+  image2videoUrl: string;
+  text2videoUrl: string;
+  queryTemplate?: string;
+} {
+  const parts = (baseURL ?? "")
+    .split("|")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (parts.length === 0) {
+    return {
+      image2videoUrl: `${DEFAULT_KLING_VIDEO_ORIGIN}/v1/videos/image2video`,
+      text2videoUrl: `${DEFAULT_KLING_VIDEO_ORIGIN}/v1/videos/text2video`,
+    };
+  }
+
+  if (parts.length === 1) {
+    const singleUrl = parts[0]!;
+    if (!isHttpUrl(singleUrl)) {
+      return {
+        image2videoUrl: `${DEFAULT_KLING_VIDEO_ORIGIN}/v1/videos/image2video`,
+        text2videoUrl: `${DEFAULT_KLING_VIDEO_ORIGIN}/v1/videos/text2video`,
+      };
+    }
+    return {
+      image2videoUrl: normalizeVideoCreateUrl(singleUrl, "image2video"),
+      text2videoUrl: normalizeVideoCreateUrl(singleUrl, "text2video"),
+    };
+  }
+
+  const image2videoUrl = normalizeVideoCreateUrl(parts[0]!, "image2video");
+  const text2videoUrl = normalizeVideoCreateUrl(parts[1]!, "text2video");
+  const queryTemplate = parts[2] ? trimTrailingSlashes(parts[2]!) : undefined;
+  return { image2videoUrl, text2videoUrl, queryTemplate };
+}
+
+function buildQueryUrl(taskId: string, createUrl: string, queryTemplate?: string): string {
+  if (!queryTemplate) {
+    return `${trimTrailingSlashes(createUrl)}/${taskId}`;
+  }
+  return queryTemplate.includes("{taskId}") ? queryTemplate.replace("{taskId}", taskId) : `${queryTemplate}/${taskId}`;
+}
 
 export default async (input: VideoConfig, config: AIConfig) => {
   if (!config.apiKey) throw new Error("缺少API Key");
-  if (!config.baseURL) throw new Error("缺少baseURL配置");
-
-  // const { images } = validateVideoConfig(input, config);
-
-  // 解析URL配置：图生视频|文生视频|查询地址
-  const defaultBaseUrl =
-    "https://api-beijing.klingai.com/v1/videos/image2video|https://api-beijing.klingai.com/v1/videos/text2video|https://api-beijing.klingai.com/v1/videos/text2video/{taskId}";
-  const [image2videoUrl, text2videoUrl, queryUrl] = (config.baseURL || defaultBaseUrl).split("|");
+  const { image2videoUrl, text2videoUrl, queryTemplate } = resolveVideoEndpoints(config.baseURL);
 
   const headers = {
-    Authorization: `Bearer ${config.apiKey}`,
+    Authorization: `Bearer ${getApiToken(config.apiKey)}`,
     "Content-Type": "application/json",
   };
 
@@ -61,7 +160,8 @@ export default async (input: VideoConfig, config: AIConfig) => {
 
   // 轮询任务状态
   return await pollTask(async () => {
-    const queryResponse = await axios.get(`${queryUrl.replace("{taskId}", taskId)}`, { headers });
+    const queryUrl = buildQueryUrl(taskId, createUrl, queryTemplate);
+    const queryResponse = await axios.get(queryUrl, { headers });
     const queryData = queryResponse.data;
     if (queryData.code !== 0) {
       return { completed: false, error: `查询失败: ${queryData.message || "未知错误"}` };
