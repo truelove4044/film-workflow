@@ -22,6 +22,7 @@
     "dev:gui": "electronmon -r tsx scripts/main.ts",
     "lint": "tsc --noEmit",
     "build": "cross-env NODE_ENV=prod tsx scripts/build.ts",
+    "build:web": "npm --prefix website run build:web",
     "pack": "electron-builder --dir",
     "dist": "yarn build && electron-builder",
     "dist:win": "yarn build && electron-builder --win",

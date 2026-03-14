@@ -7,6 +7,7 @@
     "preview": "vite preview",
     "build": "run-p type-check \"build-only dev\" --",
     "build-only": "vite build",
+    "build:web": "vite build --outDir ../scripts/web --emptyOutDir",
     "type-check": "vue-tsc --build --force",
     "lint:eslint": "eslint . --fix",
     "lint": "run-s lint:*",
