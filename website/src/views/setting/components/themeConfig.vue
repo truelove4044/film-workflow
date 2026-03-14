@@ -6,7 +6,7 @@
         <t-radio-group
           v-model="themeSetting.mode"
           variant="default-filled"
-          @change="(val, ctx) => handleModeChange(val as string, ctx.e as MouseEvent)">
+          @change="onModeGroupChange">
           <t-radio-button value="light">
             <template #label>
               <t-icon name="sunny" />
@@ -59,7 +59,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, watch } from "vue";
+import { computed, watch } from "vue";
 import { useTheme, themeSetting } from "@/utils/theme";
 
 const { applyThemeMode, applyThemeColor, toggleThemeWithTransition } = useTheme();
@@ -81,6 +81,13 @@ const isCustomColor = computed(() => !themeColors.some((c) => c.value.toLowerCas
 // 处理主题模式切换
 const handleModeChange = (mode: string, event?: MouseEvent) => {
   toggleThemeWithTransition(event, () => applyThemeMode(mode));
+};
+
+// 适配 t-radio-group change 事件签名，避免模板内隐式 any
+const onModeGroupChange = (val: string | number | boolean, ctx: { e?: Event }) => {
+  const mode = String(val);
+  const event = ctx?.e instanceof MouseEvent ? ctx.e : undefined;
+  handleModeChange(mode, event);
 };
 
 // 处理主题色变更
