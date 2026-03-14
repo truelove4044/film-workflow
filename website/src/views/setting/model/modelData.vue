@@ -134,7 +134,8 @@
                   </a-tooltip>
                   <a-popconfirm
                     title="确定要删除此模型吗？"
-                    style="z-index: 99999999999999999999"
+                    :z-index="999999"
+                    :get-popup-container="getPopupContainer"
                     ok-text="确定"
                     cancel-text="取消"
                     @confirm="delModelBtn(row)">
@@ -248,6 +249,7 @@ const props = defineProps({
     default: "text",
   },
 });
+const getPopupContainer = (node?: HTMLElement) => node?.ownerDocument?.body ?? globalThis.document?.body ?? document.body;
 interface ModelType {
   id: number;
   model: string;
