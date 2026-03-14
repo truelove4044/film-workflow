@@ -1,5 +1,6 @@
 {
   "include": ["vite.config.*", "vitest.config.*", "cypress.config.*", "nightwatch.conf.*", "playwright.config.*"],
+  "exclude": ["node_modules", "dist", "coverage", "**/*.test.ts"],
   "compilerOptions": {
     "noEmit": true,
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
@@ -13,7 +14,6 @@
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "resolveJsonModule": true,
-    "skipLibCheck": true,
-    "exclude": ["node_modules", "dist", "coverage", "**/*.test.ts"]
+    "skipLibCheck": true
   }
 }

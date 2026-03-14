@@ -10,10 +10,10 @@
                 ref="uploadRef"
                 v-model="fileList"
                 theme="file"
-                :multiple="false"
-                :max="1"
-                :before-upload="handleBeforeUpload"
-                :request-method="() => Promise.resolve({ status: 'success' })"
+                :multiple="true"
+                :max="200"
+                :before-all-files-upload="handleBeforeAllFilesUpload"
+                :request-method="noopRequestMethod"
                 style="display: none" />
               <div class="dragIcon">
                 <i-upload-one theme="outline" size="32" fill="var(--td-brand-color)" />
@@ -39,9 +39,7 @@
             </div>
 
             <div style="margin-top: 16px; text-align: right">
-              <t-button theme="primary" style="margin-left: 10px" :disabled="!content || !tableData.length" @click="activeKey = 'To2'">
-                下一步
-              </t-button>
+              <t-button theme="primary" style="margin-left: 10px" :disabled="!tableData.length" @click="activeKey = 'To2'">下一步</t-button>
             </div>
           </t-tab-panel>
 
@@ -50,7 +48,7 @@
             <div>
               <t-table
                 ref="tableRef"
-                row-key="index"
+                row-key="rowKey"
                 :data="tableData"
                 :columns="columns"
                 :selected-row-keys="selectedRowKeys"
@@ -80,15 +78,19 @@
 
 <script setup lang="ts">
 import { ElLoading } from "element-plus";
-import parseNovel from "@/utils/parseNovel";
 import mammoth from "mammoth";
-import { MessagePlugin } from "tdesign-vue-next";
+import { MessagePlugin, type UploadFile } from "tdesign-vue-next";
 
 interface ChapterItem {
   index: number;
   reel: string;
   chapter: string;
   chapterData: string;
+}
+
+interface ParsedChapterItem extends ChapterItem {
+  rowKey: string;
+  sourceFile: string;
 }
 
 const purgeNovelShow = defineModel<boolean>("modelValue");
@@ -98,105 +100,196 @@ const activeKey = ref("To1");
 const tableRef = ref();
 const uploadRef = ref();
 const content = ref("");
-const fileList = ref<any[]>([]);
-const selectedRowKeys = ref<number[]>([]);
+const fileList = ref<UploadFile[]>([]);
+const selectedRowKeys = ref<string[]>([]);
+const parsedChapters = ref<ParsedChapterItem[]>([]);
+const noopRequestMethod = () => Promise.resolve({ status: "success" as const, response: {} });
 
 const columns = [
-  { colKey: "row-select", type: "multiple", width: 60 },
+  { colKey: "row-select", type: "multiple" as const, width: 60 },
   { colKey: "index", title: "章", width: 100 },
   { colKey: "reel", title: "卷", width: 100 },
   { colKey: "chapter", title: "章节名称", width: 200, ellipsis: true },
   { colKey: "chapterData", title: "章节内容", ellipsis: true },
 ];
 
-// 解析后的章节数据
-const tableData = computed<ChapterItem[]>(() => {
-  if (!content.value) return [];
-  try {
-    return parseNovel(content.value).flatMap((reel) =>
-      reel.chapters.map((chapter) => ({
-        index: chapter.index,
-        reel: reel.reel,
-        chapter: chapter.chapter,
-        chapterData: chapter.text,
-      })),
-    );
-  } catch (e) {
-    console.error("解析小说内容出错:", e);
-    return [];
-  }
-});
-
-// 选中的行数据
-const selectedRows = computed(() => tableData.value.filter((item) => selectedRowKeys.value.includes(item.index)));
-
-// 已选文本总长度
+const tableData = computed<ParsedChapterItem[]>(() => parsedChapters.value);
+const selectedRows = computed(() => tableData.value.filter((item) => selectedRowKeys.value.includes(item.rowKey)));
 const selectedTextLength = computed(() => selectedRows.value.reduce((sum, item) => sum + item.chapterData.length, 0));
 
-// 触发上传
+const fileNameCollator = new Intl.Collator("zh-Hant", { numeric: true, sensitivity: "base" });
+const chapterPrefixRegex = /^第[0-9０-９一二三四五六七八九十百千兩零〇]+章[ \u3000]*/;
+
 function triggerUpload() {
   uploadRef.value?.triggerUpload();
 }
 
-// 处理拖拽上传
 async function handleDrop(e: DragEvent) {
   const files = e.dataTransfer?.files;
-  if (files && files.length > 0) {
-    await handleBeforeUpload({ raw: files[0] });
+  if (files?.length) {
+    await processFiles(Array.from(files));
   }
 }
 
-// 读取文件内容
+async function handleBeforeAllFilesUpload(files: Array<{ raw?: File }>) {
+  const rawFiles = files.map((item) => item.raw).filter((item): item is File => Boolean(item));
+  await processFiles(rawFiles);
+  return false;
+}
+
+function getFileExt(name: string): string {
+  const idx = name.lastIndexOf(".");
+  return idx >= 0 ? name.slice(idx).toLowerCase() : "";
+}
+
+function getFileBaseName(name: string): string {
+  const idx = name.lastIndexOf(".");
+  return idx >= 0 ? name.slice(0, idx) : name;
+}
+
+function getLeadingIndex(name: string): number | null {
+  const matched = getFileBaseName(name).match(/^(\d+)/);
+  if (!matched) return null;
+  return Number.parseInt(matched[1], 10);
+}
+
+function splitChapterTitleAndBody(rawText: string, fileName: string): { chapter: string; chapterData: string } {
+  const normalized = rawText.replace(/\r\n/g, "\n").trim();
+  if (!normalized) {
+    return { chapter: getFileBaseName(fileName), chapterData: "" };
+  }
+
+  const lines = normalized.split("\n");
+  const firstLine = (lines.shift() || "").trim();
+  const cleanedTitle = firstLine.replace(chapterPrefixRegex, "").trim();
+
+  return {
+    chapter: cleanedTitle || firstLine || getFileBaseName(fileName),
+    chapterData: lines.join("\n").trim(),
+  };
+}
+
 async function readFile(file: File): Promise<string> {
   const buffer = await file.arrayBuffer();
-  if (file.type === "text/plain") {
+  if (file.type === "text/plain" || getFileExt(file.name) === ".txt") {
     return new TextDecoder().decode(buffer);
   }
   const result = await mammoth.extractRawText({ arrayBuffer: buffer });
   return result.value;
 }
 
-// 上传前校验并解析
-async function handleBeforeUpload(file: { raw: File }) {
-  const rawFile = file.raw;
-  const allowTypes = ["text/plain", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
+async function processFiles(files: File[]) {
+  if (!files.length) return;
 
-  if (rawFile.type === "application/msword") {
-    MessagePlugin.warning(".doc文件不支持解析，请转换为.txt或.docx文件");
-    return false;
-  }
-  if (!allowTypes.includes(rawFile.type)) {
-    MessagePlugin.error("不支持的文件类型");
-    return false;
-  }
-  if (rawFile.size > 10 * 1024 * 1024) {
-    MessagePlugin.error("文件大小超过10MB，请上传更小的文件");
-    return false;
-  }
+  const sortedFiles = [...files].sort((a, b) => fileNameCollator.compare(a.name, b.name));
+  const failedNames: string[] = [];
+  const parsedFiles: Array<{ file: File; rawText: string; fileIndex: number | null }> = [];
 
   const loading = ElLoading.service({ lock: true, text: "文件解析中...", background: "rgba(0,0,0,0.7)" });
   try {
-    content.value = await readFile(rawFile);
-  } catch {
-    MessagePlugin.error("文件解析失败，请重新上传");
+    for (const rawFile of sortedFiles) {
+      const ext = getFileExt(rawFile.name);
+      const isTxt = ext === ".txt" || rawFile.type === "text/plain";
+      const isDocx = ext === ".docx" || rawFile.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+      if (ext === ".doc" || rawFile.type === "application/msword") {
+        failedNames.push(rawFile.name);
+        continue;
+      }
+      if (!isTxt && !isDocx) {
+        failedNames.push(rawFile.name);
+        continue;
+      }
+      if (rawFile.size > 10 * 1024 * 1024) {
+        failedNames.push(rawFile.name);
+        continue;
+      }
+
+      try {
+        const rawText = await readFile(rawFile);
+        parsedFiles.push({ file: rawFile, rawText, fileIndex: getLeadingIndex(rawFile.name) });
+      } catch {
+        failedNames.push(rawFile.name);
+      }
+    }
   } finally {
     loading.close();
   }
-  return false;
-}
 
-// 勾选变化
-function onSelectChange(selectedKeys: number[]) {
-  selectedRowKeys.value = selectedKeys;
-}
-
-// 提交
-function handleSubmit() {
-  if (!selectedRows.value.length) {
-    MessagePlugin.warning("请先勾选章节");
+  if (!parsedFiles.length) {
+    MessagePlugin.error("文件解析失败，请重新上传");
+    if (failedNames.length) {
+      MessagePlugin.warning(`以下文件已跳过：${failedNames.join("、")}`);
+    }
     return;
   }
-  emit("select", selectedRows.value);
+
+  const withIndex = parsedFiles.filter((item) => item.fileIndex !== null) as Array<{
+    file: File;
+    rawText: string;
+    fileIndex: number;
+  }>;
+  const withoutIndex = parsedFiles.filter((item) => item.fileIndex === null);
+
+  const mergedList: ParsedChapterItem[] = [];
+  for (const item of withIndex) {
+    const { chapter, chapterData } = splitChapterTitleAndBody(item.rawText, item.file.name);
+    mergedList.push({
+      rowKey: `${item.file.name}-${item.fileIndex}-${mergedList.length}`,
+      sourceFile: item.file.name,
+      index: item.fileIndex,
+      reel: "正文",
+      chapter,
+      chapterData,
+    });
+  }
+
+  const maxIndex = withIndex.reduce((max, item) => Math.max(max, item.fileIndex), 0);
+  let nextIndex = maxIndex + 1;
+  for (const item of withoutIndex) {
+    const { chapter, chapterData } = splitChapterTitleAndBody(item.rawText, item.file.name);
+    mergedList.push({
+      rowKey: `${item.file.name}-${nextIndex}-${mergedList.length}`,
+      sourceFile: item.file.name,
+      index: nextIndex,
+      reel: "正文",
+      chapter,
+      chapterData,
+    });
+    nextIndex += 1;
+  }
+
+  parsedChapters.value = mergedList;
+  selectedRowKeys.value = [];
+  content.value = parsedFiles
+    .map((item) => item.rawText.trim())
+    .filter(Boolean)
+    .join("\r\n\r\n");
+
+  if (failedNames.length) {
+    MessagePlugin.warning(`以下文件已跳过：${failedNames.join("、")}`);
+  }
+}
+
+function onSelectChange(selectedKeys: Array<string | number>) {
+  selectedRowKeys.value = selectedKeys.map((item) => String(item));
+}
+
+function handleSubmit() {
+  if (!selectedRows.value.length) {
+    MessagePlugin.warning("请先选择章节");
+    return;
+  }
+
+  emit(
+    "select",
+    selectedRows.value.map(({ index, reel, chapter, chapterData }) => ({
+      index,
+      reel,
+      chapter,
+      chapterData,
+    })),
+  );
 }
 </script>
 

@@ -66,8 +66,8 @@ function loadSettings() {
   formData.value.wsBaseUrl = settingStore.wsBaseUrl;
 }
 
-function handleSubmit({ validateResult }: { validateResult: boolean }) {
-  if (validateResult) {
+function handleSubmit({ validateResult }: { validateResult: unknown }) {
+  if (validateResult === true) {
     settingStore.baseUrl = formData.value.baseUrl;
     settingStore.wsBaseUrl = formData.value.wsBaseUrl;
     MessagePlugin.success("请求地址保存成功");
