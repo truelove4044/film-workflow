@@ -3,6 +3,8 @@ import u from "@/utils";
 import { z } from "zod";
 import { success } from "@/lib/responseFormat";
 import { validateFields } from "@/middleware/middleware";
+import normalizeChapterIndex from "./normalizeChapterIndex";
+import deduplicateChapterContent from "./deduplicateChapterContent";
 const router = express.Router();
 
 // 获取原文数据
@@ -14,11 +16,15 @@ export default router.post(
   async (req, res) => {
     const { projectId } = req.body;
 
+    await deduplicateChapterContent(projectId);
+    await normalizeChapterIndex(projectId);
+
     const data = await u
       .db("t_novel")
       .where("projectId", projectId)
       .select("id", "chapterIndex as index", "reel", "chapter", "chapterData")
-      .orderBy("chapterIndex", "asc");
+      .orderBy("chapterIndex", "asc")
+      .orderBy("id", "asc");
 
     res.status(200).send(success(data));
   }

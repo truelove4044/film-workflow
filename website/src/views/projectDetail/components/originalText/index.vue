@@ -135,10 +135,40 @@ async function getNovel(preferredKeys: RowKey[] = selectedRowKeys.value) {
   syncSelectedRowKeys(originalList.value, preferredKeys);
 }
 
+function normalizeIncomingChapters(chapters: ChapterItem[]): ChapterItem[] {
+  const usedIndexes = new Set<number>(
+    originalList.value
+      .map((item) => Number(item.index))
+      .filter((value) => Number.isFinite(value) && value > 0),
+  );
+
+  const validExisting = Array.from(usedIndexes.values());
+  let nextIndex = validExisting.length > 0 ? Math.max(...validExisting) + 1 : 1;
+
+  return chapters.map((item) => {
+    const preferred = Number(item.index);
+    let index = preferred;
+
+    if (!Number.isFinite(preferred) || preferred <= 0 || usedIndexes.has(preferred)) {
+      while (usedIndexes.has(nextIndex)) {
+        nextIndex += 1;
+      }
+      index = nextIndex;
+      nextIndex += 1;
+    }
+
+    usedIndexes.add(index);
+    return { ...item, index };
+  });
+}
+
 async function handleAddChapters(chapters: ChapterItem[]) {
-  await axios.post("/novel/addNovel", { projectId: projectId.value, data: chapters });
+  const normalized = normalizeIncomingChapters(chapters);
+  const res = await axios.post("/novel/addNovel", { projectId: projectId.value, data: normalized });
   await getNovel([]);
   purgeNovelShow.value = false;
+  const message = (res as any)?.message ?? (res as any)?.data?.message ?? "新增原文成功";
+  MessagePlugin.success(message);
 }
 
 function handleEdit(row: OriginalText) {

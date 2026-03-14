@@ -120,6 +120,20 @@ const selectedTextLength = computed(() => selectedRows.value.reduce((sum, item) 
 const fileNameCollator = new Intl.Collator("zh-Hant", { numeric: true, sensitivity: "base" });
 const chapterPrefixRegex = /^第[0-9０-９一二三四五六七八九十百千兩零〇]+章[ \u3000]*/;
 
+function resetDialogState() {
+  activeKey.value = "To1";
+  content.value = "";
+  fileList.value = [];
+  selectedRowKeys.value = [];
+  parsedChapters.value = [];
+}
+
+watch(purgeNovelShow, (visible) => {
+  if (visible) {
+    resetDialogState();
+  }
+});
+
 function triggerUpload() {
   uploadRef.value?.triggerUpload();
 }
@@ -260,7 +274,7 @@ async function processFiles(files: File[]) {
   }
 
   parsedChapters.value = mergedList;
-  selectedRowKeys.value = [];
+  selectedRowKeys.value = mergedList.map((item) => item.rowKey);
   content.value = parsedFiles
     .map((item) => item.rawText.trim())
     .filter(Boolean)
