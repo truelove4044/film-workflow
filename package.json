@@ -39,6 +39,8 @@
     "db:restore:file": "tsx scripts/db-backup.ts restore --file",
     "db:backup:docker": "tsx scripts/db-backup.ts backup --container toonflow-local",
     "db:restore:docker": "tsx scripts/db-backup.ts restore --container toonflow-local",
+    "prompts:export:docker": "tsx scripts/export-prompts.ts --container toonflow-local --outDir backup/prompts",
+    "prompts:import:docker": "tsx scripts/import-prompts.ts --container toonflow-local --inDir backup/prompts",
     "debug:ai": "npx @ai-sdk/devtools",
     "license": "bun run scripts/license.ts"
   },
