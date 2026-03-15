@@ -34,6 +34,11 @@
     "docker:build": "docker-compose -f docker/docker-compose.yml up -d --build",
     "docker:local": "docker-compose -f docker/docker-compose.local.yml up -d --build",
     "docker:sync:index": "npm run build:web && docker cp .\\scripts\\web\\index.html toonflow-local:/usr/share/nginx/html/index.html",
+    "db:backup": "tsx scripts/db-backup.ts backup",
+    "db:restore": "tsx scripts/db-backup.ts restore",
+    "db:restore:file": "tsx scripts/db-backup.ts restore --file",
+    "db:backup:docker": "tsx scripts/db-backup.ts backup --container toonflow-local",
+    "db:restore:docker": "tsx scripts/db-backup.ts restore --container toonflow-local",
     "debug:ai": "npx @ai-sdk/devtools",
     "license": "bun run scripts/license.ts"
   },
