@@ -87,6 +87,14 @@ function dockerCopyTo(containerName: string, source: string, target: string) {
   }
 }
 
+function dockerRestartContainer(containerName: string) {
+  try {
+    execFileSync("docker", ["restart", containerName], { stdio: ["ignore", "pipe", "pipe"] });
+  } catch (error) {
+    fail(`还原后自动重启容器失败（容器: ${containerName}）`, new Error(readExecError(error)));
+  }
+}
+
 function backupDatabase(options: CommandOptions) {
   const { containerName } = options;
   if (!fs.existsSync(dbPath)) {
@@ -150,9 +158,10 @@ function restoreDatabase(options: CommandOptions) {
   if (containerName) {
     dockerCopyFrom(containerName, defaultContainerDbPath, snapshotPath);
     dockerCopyTo(containerName, sourcePath, defaultContainerDbPath);
+    dockerRestartContainer(containerName);
     console.log(`快照已创建(容器:${containerName}): ${snapshotPath}`);
     console.log(`还原成功，来源: ${sourcePath}`);
-    console.log(`提示: 若应用正在运行，建议执行 docker restart ${containerName} 确保连接刷新`);
+    console.log(`容器已自动重启: ${containerName}`);
     return;
   }
 
