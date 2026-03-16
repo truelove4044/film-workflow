@@ -9,7 +9,7 @@ const router = express.Router();
 export default router.post(
   "/",
   validateFields({
-    name: z.string(),
+    name: z.string().trim().min(1, "项目名称不能为空"),
     intro: z.string(),
     type: z.string(),
     artStyle: z.string(),
