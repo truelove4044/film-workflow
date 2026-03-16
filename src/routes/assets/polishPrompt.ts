@@ -23,6 +23,9 @@ interface NovelChapter {
   chapterData: string;
   projectId: number;
 }
+interface ScriptData {
+  content: string;
+}
 
 type ItemType = "characters" | "props" | "scenes";
 
@@ -41,6 +44,12 @@ function mergeNovelText(novelData: NovelChapter[]): string {
       return `${chap.chapter.trim()}\n\n${chap.chapterData.trim().replace(/\r?\n/g, "\n")}\n`;
     })
     .join("\n");
+}
+function trimPromptContext(text: string, maxLength = 4000): string {
+  if (!text) return "";
+  const normalized = text.trim().replace(/\r?\n/g, "\n");
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, maxLength)}\n...(以下省略)`;
 }
 //润色提示词
 export default router.post(
@@ -168,6 +177,12 @@ export default router.post(
       `;
     }
     if (type == "storyboard") {
+      const assetData = await u.db("t_assets").where("id", assetsId).select("scriptId").first();
+      let scriptContent = "";
+      if (assetData?.scriptId) {
+        const scriptData = (await u.db("t_script").where("id", assetData.scriptId).select("id", "name", "content").first()) as ScriptData | undefined;
+        scriptContent = trimPromptContext(scriptData?.content || "");
+      }
       systemPrompt = storyboard;
       userPrompt = `
       请根据以下参数生成分镜图提示词：
@@ -176,6 +191,9 @@ export default router.post(
       - 风格: ${project?.artStyle || "未指定"}
       - 小说类型: ${project?.type || "未指定"}
       - 小说背景: ${project?.intro || "未指定"}
+
+      **相关剧本：**
+      ${scriptContent || "未提供"}
   
       **分镜设定：**
       - 分镜名称:${name},

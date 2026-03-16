@@ -159,3 +159,18 @@ Transition:
 - 不加說明
 - 不加分析
 - 不加額外註解
+---
+
+## Runtime Contract
+
+本模式是純文字模式，不依賴圖片輸入。
+
+最終輸出使用緊湊版三段結構：
+- `Visual`
+- `Keyframes`
+- `Transition`
+
+額外限制：
+- 不得補出 `Shot / Type / Camera / Audio`
+- 必須依總時長控制節奏與關鍵影格數量
+- 若與 `video-main` 的完整欄位要求衝突，以本模式格式為準

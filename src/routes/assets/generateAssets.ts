@@ -58,6 +58,7 @@ export default router.post(
 
     let systemPrompt = "";
     let userPrompt = "";
+    let aspectRatio = "16:9";
     if (type == "role") {
       systemPrompt = role;
       userPrompt = `
@@ -69,6 +70,12 @@ export default router.post(
     **角色设定：**
     - 名称:${name},
     - 提示词:${prompt},
+
+    **关键约束：**
+    - 单排横向四视图
+    - 纯白背景
+    - 零文字、零道具
+    - Panel 3 必须是严格 90° 左侧面
 
     请严格按照系统规范生成人物角色四视图。
       `;
@@ -85,11 +92,18 @@ export default router.post(
     - 名称:${name},
     - 提示词:${prompt},
 
+    **关键约束：**
+    - 必须是同一场景的多视图设定板
+    - 左 1 张全景，右 3 张同场景不同视角图
+    - 中间必须有黑色竖向分隔线
+    - 全图零人物、零可读文字
+
     请严格按照系统规范生成标准场景图。
       `;
     }
     if (type == "props") {
       systemPrompt = tool;
+      aspectRatio = "1:1";
       userPrompt = `
       请根据以下参数生成标准道具图：
 
@@ -99,6 +113,13 @@ export default router.post(
     **道具设定：**
     - 名称:${name},
     - 提示词:${prompt},
+
+    **关键约束：**
+    - 单一道具
+    - 纯白背景
+    - 不可出现支架、底座、场景或手部
+    - 3/4 视角
+    - 道具主体应占画面大部分
 
     请严格按照系统规范生成标准道具图。
       `;
@@ -114,6 +135,11 @@ export default router.post(
     **分镜设定：**
     - 名称:${name},
     - 提示词:${prompt},
+
+    **关键约束：**
+    - 禁止字幕条、镜号、技术注记与其他画外文字
+    - 对话默认通过人物表演表达，不要生成可见字幕
+    - 仅允许场景内合理且叙事必要的文字
 
     请严格按照系统规范生成标准分镜图。
       `;
@@ -132,7 +158,7 @@ export default router.post(
           prompt: userPrompt,
           imageBase64: base64 ? [base64] : [],
           size: "2K",
-          aspectRatio: "16:9",
+          aspectRatio,
         },
         apiConfig,
       );

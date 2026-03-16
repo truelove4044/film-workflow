@@ -103,3 +103,17 @@ Transition:
 - 直接輸出分鏡內容
 - 不添加任何解釋性文字
 - 僅包含 Keyframes、Visual 與 Transition
+---
+
+## Runtime Contract
+
+本模式最終只輸出以下三個區塊，且不得額外補出 `Shot / Type / Camera / Audio`：
+- `Keyframes`
+- `Visual`
+- `Transition`
+
+圖片規則：
+- 1 張圖：視為起始影格，尾段狀態需依同一畫面合理推演
+- 2 張圖：視為明確首尾影格橋接
+
+若與 `video-main` 的完整欄位要求衝突，以本模式格式為準。

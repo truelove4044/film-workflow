@@ -6,41 +6,197 @@ import { z } from "zod";
 
 const router = express.Router();
 
-type GenerateMode = "startEnd" | "multi" | "single" | "text";
+const modeSchema = z.enum(["startEnd", "multi", "single", "text"]);
+const typeSchema = z.enum(["startEnd", "multi", "single", "text", ""]);
+
+type GenerateMode = z.infer<typeof modeSchema>;
+
+interface PromptImage {
+  filePath: string;
+  prompt: string;
+}
+
+interface StoryContextData {
+  scriptContent: string;
+  source: "videoConfig" | "script" | "draft";
+}
+
+const MODE_OUTPUT_CONTRACT: Record<GenerateMode, string> = {
+  startEnd: "Return only Keyframes + Visual + Transition.",
+  single: "Return only Keyframes + Visual + Transition.",
+  multi: "Return only Keyframes + Visual.",
+  text: "Return a compact Visual + Keyframes + Transition block.",
+};
+
+const MODE_DESCRIPTION: Record<GenerateMode, string> = {
+  startEnd: "Start-End image bridge mode",
+  multi: "Multi-image storyboard mode",
+  single: "Single-image extrapolation mode",
+  text: "Text-only motion prompt mode",
+};
 
 const getSystemPrompt = async (mode: GenerateMode) => {
   const promptsList = await u.db("t_prompts").where("code", "in", ["video-startEnd", "video-multi", "video-single", "video-main", "video-text"]);
 
-  const errPrompts = "不论用户说什么，请直接输出AI配置异常";
+  const fallbackPrompt = "Prompt config missing.";
   const getPromptValue = (code: string) => {
     const item = promptsList.find((p) => p.code === code);
-    return item?.customValue ?? item?.defaultValue ?? errPrompts;
+    return item?.customValue ?? item?.defaultValue ?? fallbackPrompt;
   };
-  const startEnd = getPromptValue("video-startEnd");
-  const multi = getPromptValue("video-multi");
-  const single = getPromptValue("video-single");
-  const main = getPromptValue("video-main");
-  const text = getPromptValue("video-text");
 
-  const modeDescriptions = {
-    startEnd: startEnd,
-    multi: multi,
-    single: single,
-    text: text,
-  };
-  const modeData = modeDescriptions[mode];
-  return `${main}\n\n${modeData}`;
+  return `${getPromptValue("video-main")}\n\n${getPromptValue(`video-${mode}`)}`;
 };
 
-const getModeDescription = (mode: GenerateMode): string => {
-  const map: Record<GenerateMode, string> = {
-    startEnd: "首尾帧模式",
-    multi: "宫格模式",
-    single: "单图模式",
-    text: "文本模式",
+function normalizeMode(mode?: string, type?: string): GenerateMode {
+  const rawMode = (mode && mode.trim()) || (type && type.trim()) || "single";
+  return modeSchema.safeParse(rawMode).success ? (rawMode as GenerateMode) : "single";
+}
+
+function sanitizeImages(images?: PromptImage[]): PromptImage[] {
+  if (!Array.isArray(images)) {
+    return [];
+  }
+
+  return images.filter((item) => item && typeof item.filePath === "string" && item.filePath.trim() !== "");
+}
+
+function normalizeModeInputs(mode: GenerateMode, images: PromptImage[]) {
+  if (mode === "text") {
+    return {
+      mode,
+      images: [] as PromptImage[],
+      fallbackNote: "",
+    };
+  }
+
+  if (mode === "single") {
+    if (images.length !== 1) {
+      throw new Error("single mode requires exactly 1 image");
+    }
+    return {
+      mode,
+      images,
+      fallbackNote: "",
+    };
+  }
+
+  if (mode === "multi") {
+    if (images.length === 1) {
+      return {
+        mode: "single" as GenerateMode,
+        images,
+        fallbackNote: "Requested multi mode with 1 image, downgraded to single mode.",
+      };
+    }
+    if (images.length < 2) {
+      throw new Error("multi mode requires at least 2 images");
+    }
+    return {
+      mode,
+      images,
+      fallbackNote: "",
+    };
+  }
+
+  if (images.length === 0) {
+    throw new Error("startEnd mode requires 1 or 2 images");
+  }
+  if (images.length > 2) {
+    throw new Error("startEnd mode accepts at most 2 images");
+  }
+
+  return {
+    mode,
+    images,
+    fallbackNote: images.length === 1 ? "Single start frame provided. Infer the target state from the same image." : "",
   };
-  return map[mode];
-};
+}
+
+async function getStoryContext(videoConfigId?: number, scriptId?: number, draftPrompt?: string): Promise<StoryContextData> {
+  if (videoConfigId) {
+    const row = await u
+      .db("t_videoConfig")
+      .leftJoin("t_script", "t_script.id", "t_videoConfig.scriptId")
+      .where("t_videoConfig.id", videoConfigId)
+      .select("t_script.content")
+      .first();
+
+    if (!row) {
+      throw new Error("videoConfig not found");
+    }
+
+    if (row.content) {
+      return {
+        scriptContent: row.content,
+        source: "videoConfig",
+      };
+    }
+  }
+
+  if (scriptId) {
+    const row = await u.db("t_script").where("id", scriptId).select("content").first();
+    if (row?.content) {
+      return {
+        scriptContent: row.content,
+        source: "script",
+      };
+    }
+  }
+
+  return {
+    scriptContent: (draftPrompt || "").trim(),
+    source: "draft",
+  };
+}
+
+function buildUserPrompt({
+  originalMode,
+  resolvedMode,
+  images,
+  duration,
+  storyContext,
+  draftPrompt,
+  fallbackNote,
+}: {
+  originalMode: GenerateMode;
+  resolvedMode: GenerateMode;
+  images: PromptImage[];
+  duration: number;
+  storyContext: StoryContextData;
+  draftPrompt: string;
+  fallbackNote: string;
+}) {
+  const imagePrompts = images.length
+    ? images.map((item, index) => `Image ${index + 1}: ${item.prompt || "(no image prompt provided)"}`).join("\n")
+    : "None";
+
+  const shotCount = images.length;
+  const averageDuration = shotCount > 0 ? `${(duration / shotCount).toFixed(1)}s per shot` : "N/A";
+  const additionalRequirements = storyContext.source === "draft" ? "" : draftPrompt.trim();
+
+  return `Mode: ${MODE_DESCRIPTION[originalMode]}
+Resolved Mode: ${MODE_DESCRIPTION[resolvedMode]}
+${fallbackNote ? `Mode Fallback: ${fallbackNote}` : ""}
+
+Output Contract:
+${MODE_OUTPUT_CONTRACT[resolvedMode]}
+
+Story Context Source:
+${storyContext.source}
+
+Story Context:
+${storyContext.scriptContent || "No story context provided."}
+
+Reference Images:
+${imagePrompts}
+
+${additionalRequirements ? `Additional Requirements / Existing Draft:\n${additionalRequirements}\n\n` : ""}Parameters:
+- Total Duration: ${duration}s
+- Shot Count: ${shotCount}
+- Average Duration: ${averageDuration}
+
+Generate the final video prompt now.`;
+}
 
 export default router.post(
   "/",
@@ -55,28 +211,42 @@ export default router.post(
       .optional(),
     prompt: z.string(),
     duration: z.number(),
-    type: z.enum(["startEnd", "multi", "single", "text", ""]).optional(),
+    mode: modeSchema.optional(),
+    type: typeSchema.optional(),
     videoConfigId: z.number().optional(),
+    scriptId: z.number().optional(),
   }),
   async (req, res) => {
-    const { prompt, images, duration, type = "single", videoConfigId } = req.body;
-    const mode = type as GenerateMode;
-    let videoConfigData;
-    if (videoConfigId) {
-      videoConfigData = await u
-        .db("t_videoConfig")
-        .leftJoin("t_script", "t_script.id", "t_videoConfig.scriptId")
-        .where("t_videoConfig.id", videoConfigId)
-        .select("t_script.content")
-        .first();
-      if (!videoConfigData) return res.status(500).send(error("视频配置不存在"));
-    }
-    const imagePrompts = images.map((i: { filePath: string; prompt: string }, index: number) => `Image ${index + 1}: ${i.prompt}`).join("\n");
+    const { prompt, duration, videoConfigId, scriptId } = req.body;
+    const requestedMode = normalizeMode(req.body.mode, req.body.type);
+    const safeImages = sanitizeImages(req.body.images);
 
-    const shotCount = images.length;
-    const avgDuration = (parseFloat(duration) / shotCount).toFixed(1);
-    const promptConfig = await getSystemPrompt(mode);
+    let normalized;
+    try {
+      normalized = normalizeModeInputs(requestedMode, safeImages);
+    } catch (e) {
+      return res.status(400).send(error(u.error(e).message));
+    }
+
+    let storyContext: StoryContextData;
+    try {
+      storyContext = await getStoryContext(videoConfigId, scriptId, prompt);
+    } catch (e) {
+      return res.status(400).send(error(u.error(e).message));
+    }
+
+    const promptConfig = await getSystemPrompt(normalized.mode);
     const promptAiConfig = await u.getPromptAi("videoPrompt");
+    const userPrompt = buildUserPrompt({
+      originalMode: requestedMode,
+      resolvedMode: normalized.mode,
+      images: normalized.images,
+      duration,
+      storyContext,
+      draftPrompt: prompt,
+      fallbackNote: normalized.fallbackNote,
+    });
+
     try {
       const result = await u.ai.text.invoke(
         {
@@ -87,27 +257,7 @@ export default router.post(
             },
             {
               role: "user",
-              content: `Mode: ${getModeDescription(mode)}
-
-Reference Images:
-${imagePrompts}
-
-Script:
-${prompt}
-${
-  videoConfigData
-    ? `script content:
-${videoConfigData.content}`
-    : ""
-}
-
-
-Parameters:
-- Total Duration: ${duration}s
-- Shot Count: ${shotCount}
-- Average Duration: ${avgDuration}s per shot
-
-Generate storyboard prompts:`,
+              content: userPrompt,
             },
           ],
         },

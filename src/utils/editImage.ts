@@ -1,17 +1,6 @@
 import u from "@/utils";
 import axios from "axios";
 import { v4 as uuid } from "uuid";
-async function getImageBase64ForId(imageId: string | number) {
-  const imagePath = await u
-    .db("t_assets")
-    .select("filePath")
-    .where({ id: Number(imageId) })
-    .first();
-
-  if (!imagePath || !imagePath.filePath) return ""; // 未找到图片路径
-  const url = await u.oss.getFileUrl(imagePath.filePath);
-  return await urlToBase64(url);
-}
 
 async function urlToBase64(imageUrl: string): Promise<string> {
   const response = await axios.get(imageUrl, { responseType: "arraybuffer" });
@@ -19,78 +8,97 @@ async function urlToBase64(imageUrl: string): Promise<string> {
   const base64 = Buffer.from(response.data, "binary").toString("base64");
   return `data:${contentType};base64,${base64}`;
 }
-// 将图片ID和指令转换为base64数组和替换后的指令
-async function convertDirectiveAndImages(images: Record<string, string>, directive: string) {
-  // step1: 列出所有别名
+
+async function getImageBase64ForId(imageId: string | number) {
+  const numericId = Number(imageId);
+  if (isNaN(numericId)) return "";
+
+  const imageRow = await u
+    .db("t_image")
+    .select("filePath")
+    .where({ id: numericId })
+    .first();
+
+  const assetsRow = !imageRow?.filePath
+    ? await u
+        .db("t_assets")
+        .select("filePath")
+        .where({ id: numericId })
+        .first()
+    : null;
+
+  const resolvedPath = imageRow?.filePath || assetsRow?.filePath || "";
+  if (!resolvedPath) return "";
+
+  const url = /^https?:\/\//.test(resolvedPath) ? resolvedPath : await u.oss.getFileUrl(resolvedPath);
+  return await urlToBase64(url);
+}
+
+async function convertDirectiveAndImages(images: Record<string, string | number>, directive: string) {
   const aliasList = Object.keys(images);
-  // step2: 在指令中提取所有 @别名出现
   const aliasRegex = /@[\u4e00-\u9fa5\w]+/g;
   const referencedAliases = directive.match(aliasRegex) || [];
-  // step3: 检查别名
+
   for (const alias of referencedAliases) {
     if (!(alias in images)) {
-      throw new Error(`您引用了不存在的图片：${alias}`);
+      throw new Error(`指令中引用了不存在的圖片別名：${alias}`);
     }
   }
-  // step4: 构建别名与顺序编号映射
+
   const aliasToIndex: Record<string, number> = {};
   aliasList.forEach((alias, i) => {
     aliasToIndex[alias] = i + 1;
   });
-  // step5: 替换指令中的别名为"图N"
-  let prompt = directive;
-  for (const [alias, idx] of Object.entries(aliasToIndex)) {
-    // 转义alias可能含特殊字符
-    const reg = new RegExp(alias.replace(/([.*+?^${}()|\[\]\/\\])/g, "\\$1"), "g");
-    prompt = prompt.replace(reg, `图${idx}`);
-  }
-  // step6: 依次获取图片 base64 内容（区分id或者本身就是base64）
-  const base64Images: string[] = [];
 
-  for (const imageVal of Object.values(images)) {
-    // 判断是否为base64串
+  let prompt = directive;
+  for (const alias in aliasToIndex) {
+    const idx = aliasToIndex[alias];
+    const reg = new RegExp(alias.replace(/([.*+?^${}()|\[\]\/\\])/g, "\\$1"), "g");
+    prompt = prompt.replace(reg, `图片${idx}`);
+  }
+
+  const base64Images: string[] = [];
+  for (const alias in images) {
+    const imageVal = images[alias];
     const isBase64 = typeof imageVal === "string" && /^data:image\//.test(imageVal);
     if (isBase64) {
       base64Images.push(imageVal);
-    } else if (typeof imageVal === "number") {
+      continue;
+    }
+
+    if (typeof imageVal === "number" || (typeof imageVal === "string" && /^\d+$/.test(imageVal))) {
       const base64 = await getImageBase64ForId(imageVal);
-      base64Images.push(base64);
-    } else if (imageVal.includes("http")) {
+      if (base64) base64Images.push(base64);
+      continue;
+    }
+
+    if (typeof imageVal === "string" && imageVal.indexOf("http") >= 0) {
       const base64 = await urlToBase64(imageVal);
       base64Images.push(base64);
     }
   }
+
   return {
     prompt,
     images: base64Images,
   };
 }
 
-/**
- * 示例用法：
- *
- * editImages(
- *   {
- *     "@图8": "456",   // key: 图片别名（如@图8），value: 图片ID（如456）
- *     "@图10": "123"   // key: 图片别名（如@图10），value: 图片ID（如123）
- *   },
- *   "将@图10中圈起来的部分换成@图8"
- * );
- */
-export default async (images: Record<string, string>, directive: string, projectId: number, aspectRatio: string | null) => {
+export default async (images: Record<string, string | number>, directive: string, projectId: number, aspectRatio: string | null) => {
   const { prompt, images: base64Images } = await convertDirectiveAndImages(images, directive);
   const apiConfig = await u.getPromptAi("editImage");
 
   const contentStr = await u.ai.image(
     {
       systemPrompt: "根据用户提供的具体修改指令，对上传的图片进行智能编辑。",
-      prompt: prompt,
+      prompt,
       imageBase64: base64Images,
       aspectRatio: aspectRatio ? aspectRatio : "16:9",
       size: "1K",
     },
     apiConfig,
   );
+
   const match = contentStr.match(/base64,([A-Za-z0-9+/=]+)/);
   const buffer = Buffer.from(match && match.length >= 1 ? match[1]! : contentStr, "base64");
   const filePath = `/${projectId}/storyboard/${uuid()}.jpg`;

@@ -447,3 +447,12 @@ prompt_text 中嚴禁出現：
 - shot_number 是否計算正確
 - 每個 shot 是否有 grid_aspect_ratio
 - 全部鏡頭是否保持人物、場景、光線、色調一致
+---
+
+# Runtime Handoff Rules
+
+1. The output is for a storyboard grid image that will be split back into individual cells later.
+2. Keep a strict 1:1 mapping between input shot order and grid cell order. Do not merge or reorder shots.
+3. Prefer the provided asset references first. If some assets are only available as text context, keep them consistent and minimal instead of inventing a brand-new design.
+4. When reference coverage is weak, preserve role / scene continuity first, then reduce decorative detail.
+5. Empty or placeholder cells must stay visually simple and must not steal focus from real storyboard cells.

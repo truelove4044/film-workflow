@@ -477,7 +477,9 @@ async function generateConfigPrompt(config: VideoConfig) {
       prompt: config.prompt || "生成视频",
       images: images.map((img) => ({ filePath: img.filePath, prompt: img.prompt })),
       duration: config.duration,
+      mode: config.mode,
       type: config.mode,
+      scriptId: props.scriptId,
     });
     config.prompt = res.data;
     message.success("提示词生成成功");

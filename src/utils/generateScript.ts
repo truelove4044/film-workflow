@@ -46,7 +46,7 @@ function formatEpisodePrompt(episode: Episode): string {
   const keyEventsLabels = ["起", "承", "转", "合"];
   const keyEventsStr = episode.keyEvents.map((e, i) => `  【${keyEventsLabels[i] || i + 1}】${e}`).join("\n");
 
-  const quotesStr = episode.classicQuotes.map((q, i) => `  金句${i + 1}：「${q}」`).join("\n");
+  const quotesStr = episode.classicQuotes.map((q, i) => `  金句${i + 1}：${q}`).join("\n");
 
   const highlightsStr = episode.visualHighlights.map((h, i) => `  镜头${i + 1}：${h}`).join("\n");
 
@@ -86,7 +86,7 @@ ${highlightsStr}
 【结尾悬念】必须作为收尾，后接【黑屏】
 ${episode.endingHook}
 
-【黄金金句】必须原文出现在剧本高潮段落
+【黄金金句】必须原文保留，并优先放在情绪高点，通常落在高潮或高潮前一个 beat
 ${quotesStr}
 `;
 }
@@ -109,11 +109,11 @@ export async function generateScript(episode: Episode, novelData: string): Promi
 2. ⚠️ 严格按【剧情主干】顺序展开剧情，这是剧本的唯一权威
 3. ⚠️ 【剧情节点】四步必须严格按顺序呈现：起→承→转→合，不输出标记
 4. emotionalCurve必须在对应剧情节点体现
-5. classicQuotes必须原文出现在高潮段落
+5. classicQuotes必须原文保留，并优先放在情绪高点，通常落在高潮或高潮前一个 beat
 6. endingHook必须作为收尾
-7. scenes/characters/props必须全部使用，按出场顺序
-8. visualHighlights中的镜头必须按剧情主干顺序全部呈现
-9. 500-800字
+7. scenes/characters必须全部使用；关键props必须出现，非关键props自然带到即可
+8. visualHighlights必须全部覆盖，可由同一镜头合并承接，并按剧情主干顺序呈现
+9. 600-1000字
 10. 以【黑屏】结尾
 
 ═══════════════════════════════════════

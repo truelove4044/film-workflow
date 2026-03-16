@@ -331,3 +331,20 @@ Visual 必須符合以下標準：
 ## 執行原則
 
 收到分鏡需求後，直接依照上述格式輸出完整分鏡內容，不加說明、不加分析、不加前言、不加結語。
+---
+
+## Runtime Override
+
+在 `/video/generatePrompt` 的模式化整合流程中，本檔只負責共通規則，不再強制所有模式都輸出完整 `Shot / Type / Camera / Visual / Keyframes / Audio / Transition` 結構。
+
+共通要求固定保留：
+- 節奏合理、不可超時
+- 運鏡與畫面變化必須合法
+- 視覺描述必須具體、可視化
+- 不可輸出 Markdown、JSON 或多餘解說
+
+最終輸出格式一律由當前模式 prompt 決定：
+- `startEnd`：只輸出 `Keyframes + Visual + Transition`
+- `single`：只輸出 `Keyframes + Visual + Transition`
+- `multi`：只輸出 `Keyframes + Visual`
+- `text`：輸出緊湊版 `Visual + Keyframes + Transition`

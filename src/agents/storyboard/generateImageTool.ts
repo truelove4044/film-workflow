@@ -36,6 +36,15 @@ interface ResourceItem {
   intro: string;
 }
 
+interface AssetTag {
+  type: "role" | "props" | "scene";
+  text: string;
+}
+
+interface GenerateImageOptions {
+  assetsTags?: AssetTag[];
+}
+
 // 压缩图片直到不超过指定大小
 async function compressImage(buffer: Buffer, maxSizeBytes: number = 3 * 1024 * 1024): Promise<Buffer> {
   if (buffer.length <= maxSizeBytes) {
@@ -259,7 +268,28 @@ function buildResourcesMapPrompts(images: ImageInfo[]): string {
   return `其中人物、场景、道具参考对照关系如下：${mapping.join(", ")}。`;
 }
 
-export default async (cells: { prompt: string }[], scriptId: number, projectId: number) => {
+function normalizeAssetName(text: string): string {
+  return text.trim();
+}
+
+function dedupeImages(images: ImageInfo[]): ImageInfo[] {
+  const seen = new Set<string>();
+  return images.filter((image) => {
+    const key = `${image.name}::${image.filePath}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+export default async (
+  cells: { prompt: string }[],
+  scriptId: number,
+  projectId: number,
+  options: GenerateImageOptions = {},
+) => {
   const scriptData = await u.db("t_script").where({ id: scriptId, projectId }).first();
   const projectInfo = await u.db("t_project").where({ id: projectId }).first();
 
@@ -287,7 +317,35 @@ export default async (cells: { prompt: string }[], scriptId: number, projectId: 
   const cellPrompts = cells.map((c) => c.prompt);
 
   // 使用 AI 过滤相关资产
-  const filteredImages = await filterRelevantAssets(cellPrompts, resources, allImages);
+  const resourceByName = new Map(resources.map((resource) => [normalizeAssetName(resource.name), resource]));
+  const tagNames = Array.from(
+    new Set((options.assetsTags ?? []).map((item) => normalizeAssetName(item.text)).filter(Boolean)),
+  );
+  const taggedImages = dedupeImages(allImages.filter((image) => tagNames.includes(normalizeAssetName(image.name))));
+
+  let filteredImages = taggedImages;
+  if (tagNames.length === 0 || taggedImages.length === 0 || taggedImages.length < tagNames.length) {
+    const aiFilteredImages = await filterRelevantAssets(cellPrompts, resources, allImages);
+    filteredImages = dedupeImages([...taggedImages, ...aiFilteredImages]);
+  }
+
+  const groundedNames = new Set(filteredImages.map((image) => normalizeAssetName(image.name)));
+  const groundedResources = filteredImages.map((image) => {
+    const matched = resourceByName.get(normalizeAssetName(image.name));
+    return {
+      name: image.name,
+      intro: matched?.intro ?? "",
+    };
+  });
+  const weakTaggedResources = tagNames
+    .filter((name) => !groundedNames.has(name))
+    .map((name) => resourceByName.get(name))
+    .filter((resource): resource is ResourceItem => Boolean(resource))
+    .map((resource) => ({
+      name: resource.name,
+      intro: `${resource.intro} (text-only reference, no image reference)`,
+    }));
+  const promptResources = [...groundedResources, ...weakTaggedResources];
 
   const resourcesMapPrompts = buildResourcesMapPrompts(filteredImages);
   console.log("====润色前：", cellPrompts);
@@ -295,7 +353,7 @@ export default async (cells: { prompt: string }[], scriptId: number, projectId: 
     prompts: cellPrompts,
     style: `类型：${projectInfo?.type!}，风格：${projectInfo?.artStyle!}`,
     aspectRatio: projectInfo?.videoRatio! as any,
-    assetsName: resources,
+    assetsName: promptResources,
   });
 
   //   const prompts = `请生成${promptsData.gridLayout.totalCells}格,${promptsData.gridLayout.cols}列×${promptsData.gridLayout.rows}行宫格图。

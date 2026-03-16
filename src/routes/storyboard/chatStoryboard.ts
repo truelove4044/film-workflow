@@ -21,7 +21,7 @@ router.ws("/", async (ws, req) => {
 
   const existing = await u
     .db("t_chatHistory")
-    .where({ projectId: Number(projectId) })
+    .where({ projectId: Number(projectId), type: "storyboardAgent" })
     .first();
   if (existing) {
     try {
@@ -32,7 +32,6 @@ router.ws("/", async (ws, req) => {
       agent.history = [];
     }
   }
-  agent.history = [];
   // 监听各类事件
   // 流式传输：每个token
   agent.emitter.on("data", (text) => {
@@ -132,17 +131,19 @@ router.ws("/", async (ws, req) => {
           agent.history = [];
           await u
             .db("t_chatHistory")
-            .where({ projectId: Number(projectId) })
+            .where({ projectId: Number(projectId), type: "storyboardAgent" })
             .del();
           ws.send(JSON.stringify({ type: "notice", data: "历史记录已清空" }));
           break;
         case "generateShotImage":
-          agent.history = [];
-          await u
-            .db("t_chatHistory")
-            .where({ projectId: Number(projectId) })
-            .del();
-          ws.send(JSON.stringify({ type: "notice", data: "历史记录已清空" }));
+          if (!Array.isArray(msg?.shotIds) || msg.shotIds.some((id: unknown) => typeof id !== "number")) {
+            ws.send(JSON.stringify({ type: "error", data: "generateShotImage 需要 shotIds:number[]" }));
+            break;
+          }
+          {
+            const result = await agent.requestGenerateShotImage(msg.shotIds);
+            ws.send(JSON.stringify({ type: "notice", data: result }));
+          }
           break;
         case "replaceShot":
           agent.updatePreShots(msg.segmentId, msg.cellId, msg.cell);

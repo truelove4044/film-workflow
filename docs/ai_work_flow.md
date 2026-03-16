@@ -209,3 +209,50 @@
 
 - 本文件聚焦「小說上傳後」正式產品流程中的 AI 介入節點。
 - `other/testAI`、`other/testImage`、`other/testVideo` 屬測試用途，不納入正式流程。
+---
+
+## 6) 分鏡宮格提示詞生成與分鏡出圖補充說明
+
+- 本段實際存在兩條執行路徑，需分開理解：
+  - `Agent Persisted Path`：main agent 透過內部 `generateShotImage` 走完整流程，會生成宮格圖、切圖、上傳 OSS，並回寫到 shot / cell。
+  - `Route Preview Path`：`/storyboard/generateShotImage` 僅生成宮格預覽圖並回傳 buffer，不做切圖、不寫 DB、不落地本機檔案。
+- 文字整合階段的主 prompt 是 `t_prompts.code = generateImagePrompts`。
+- 圖片生成階段目前以 code 內組裝的 user prompt + system prompt + 資產映射規則為主；`storyboard-generateImage` 不作為本段 runtime 唯一 prompt 來源。
+- 若 shot 已保存 `assetsTags`，第 6 段先用它決定優先資產；只有在 tags 缺失或對不到實際圖資時，才退回 AI relevance filter。
+- 送進 image model 的 reference 僅限 `t_assets` 中實際有圖片的資產；沒有圖片的資產只能作為弱文字參考。
+---
+
+## 8) 影片提示詞整合（模式化）補充說明
+
+- 本段是 mode-aware prompt composer，不直接生成影片；實際出片在第 9 段 `/video/generateVideo`。
+- `video-main` 只負責共通品質規則；最終輸出格式由模式 prompt 決定：
+  - `startEnd`：`Keyframes + Visual + Transition`
+  - `single`：`Keyframes + Visual + Transition`
+  - `multi`：`Keyframes + Visual`
+  - `text`：緊湊版 `Visual + Keyframes + Transition`
+- route contract 以 `mode` 為主，`type` 僅作相容別名。
+- mode 正規化規則：
+  - `text`：忽略圖片
+  - `single`：必須 1 張圖
+  - `multi`：至少 2 張圖；若只有 1 張圖則降級為 `single`
+  - `startEnd`：允許 1 或 2 張圖
+- prompt 組裝時，故事上下文優先使用 `videoConfigId` 或 `scriptId` 對應的 script；請求中的 `prompt` 只作補充需求或既有草稿，不再默認視為 script 正文。
+
+## 9) 影片生成流程補充
+
+- route: `/video/generateVideo` 對應 `src/routes/video/generateVideo.ts`
+- 入口先做 capability preflight，依 `modelList` 驗證 mode、duration、resolution、audio、aspect ratio
+- request mode 會先正規化成 `effectiveMode`
+- `multi` 若模型或 provider 不支援真 multi reference，會先走 collage fallback 再降為 `single`
+- capability check 未通過時，不建立 `t_video`
+- route response 會帶回 `requestedMode`、`effectiveMode`、`normalization`
+- 真正生成仍由 `u.ai.video` + provider adapter + polling 完成，最後回寫 `t_video.state`
+
+## 10) 分鏡改圖 / 分鏡超分流程補充
+
+- `generateStoryboardApi` 的圖片來源先查 `t_image`，查不到再回退 `t_assets`，支援 `t_image.id`、`t_assets.id`、URL、base64 混用
+- `generateStoryboardApi` 的 request contract 收斂為 alias map：`Record<string, string | number>`，`assetsId` 改為 optional/nullable number
+- 分鏡改圖落庫到 `t_image` 時，會補齊 `projectId`、`scriptId`、`type`、`state`
+- `batchSuperScoreImage` 的 `scriptId` 僅作 metadata，route 不再強制依賴劇本存在
+- 超分批次改為逐格 `allSettled`，部分失敗不會讓成功結果二次崩潰
+- 超分結果會落到 `t_image`，並優先使用 `storyboardUpscale` model key；若未配置則回退 `storyboardImage`

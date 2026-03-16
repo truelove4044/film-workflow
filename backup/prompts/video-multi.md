@@ -86,3 +86,14 @@ Visual:
 - 直接輸出分鏡內容
 - 不添加任何解釋性文字
 - 僅包含 Keyframes 與 Visual 描述
+---
+
+## Runtime Contract
+
+本模式最終只輸出以下兩個區塊，且不得額外補出 `Shot / Type / Camera / Audio / Transition`：
+- `Keyframes`
+- `Visual`
+
+輸入固定視為 2 張以上圖片的順序推演：
+- 必須依照輸入圖片順序拆解每一格
+- 若與 `video-main` 的完整欄位要求衝突，以本模式格式為準

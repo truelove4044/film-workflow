@@ -126,9 +126,7 @@ export default class Storyboard {
     inputSchema: z.object({}),
     execute: async () => {
       this.log("获取资产列表", `scriptId: ${this.scriptId}`);
-      const scriptData = await u.db("t_script").where({ id: this.scriptId, projectId: this.projectId }).first();
-      const row = await u.db("t_outline").where({ id: scriptData?.outlineId!, projectId: this.projectId }).first();
-      const outline: any | null = row?.data ? JSON.parse(row.data) : null;
+      const outline: any | null = await this.getOutlineData();
 
       if (!outline) {
         return "暂无资产数据";
@@ -186,6 +184,88 @@ ${sections.join("\n\n")}
         return "暂无片段数据，请先调用 segmentAgent 生成片段";
       }
       return JSON.stringify(this.segments, null, 2);
+    },
+  });
+
+  private async startShotImageGeneration(shotIds: number[]): Promise<string> {
+    const toGenerate: number[] = [];
+    const alreadyGenerating: number[] = [];
+    const notFound: number[] = [];
+
+    for (const shotId of shotIds) {
+      const shot = this.shots.find((f) => f.id === shotId);
+      if (!shot) {
+        notFound.push(shotId);
+        continue;
+      }
+      if (this.generatingShots.has(shotId)) {
+        alreadyGenerating.push(shotId);
+        continue;
+      }
+      toGenerate.push(shotId);
+    }
+
+    if (toGenerate.length === 0) {
+      if (notFound.length) {
+        return `分镜 ${notFound.join(", ")} 不存在，请检查分镜ID是否正确`;
+      }
+      if (alreadyGenerating.length) {
+        return `分镜 ${alreadyGenerating.join(", ")} 正在生成图片，请稍候`;
+      }
+      return "没有可生成图片的分镜";
+    }
+
+    for (const id of toGenerate) {
+      this.generatingShots.add(id);
+    }
+
+    this.emit("shotImageGenerateStart", { shotIds: toGenerate });
+    this.log("开始生成分镜图片", `分镜: [${toGenerate.join(", ")}]`);
+
+    this.executeShotImageGeneration(toGenerate).catch((err) => {
+      this.log("分镜图片生成失败", err.message);
+      this.emit("shotImageGenerateError", { shotIds: toGenerate, error: err.message });
+    });
+
+    let result = `已开始为分镜 ${toGenerate.join(", ")} 生成分镜图片，完成后会自动更新。`;
+    if (alreadyGenerating.length) {
+      result += ` 分镜 ${alreadyGenerating.join(", ")} 已在生成中。`;
+    }
+    if (notFound.length) {
+      result += ` 未找到分镜 ${notFound.join(", ")}。`;
+    }
+    return result;
+  }
+
+  /**
+   * 获取当前已生成的分镜数据，供 main / shotAgent 查询与修改时使用
+   */
+  getShots = tool({
+    title: "getShots",
+    description: "获取当前已生成的分镜数据，包含分镜ID、片段序号、提示词、资产标签与图片生成状态",
+    inputSchema: z.object({}),
+    execute: async () => {
+      this.log("获取分镜数据", `共 ${this.shots.length} 个分镜`);
+      if (this.shots.length === 0) {
+        return "暂无分镜数据，请先调用 shotAgent 生成分镜";
+      }
+
+      return JSON.stringify(
+        this.shots.map((shot) => ({
+          shotId: shot.id,
+          segmentIndex: shot.segmentId,
+          title: shot.title,
+          prompts: shot.cells.map((cell) => cell.prompt ?? ""),
+          assetsTags: shot.assetsTags,
+          imageStatus: {
+            totalCells: shot.cells.length,
+            generatedImageCount: shot.cells.filter((cell) => Boolean(cell.src)).length,
+            hasGeneratedImages: shot.cells.some((cell) => Boolean(cell.src)),
+          },
+        })),
+        null,
+        2,
+      );
     },
   });
 
@@ -285,8 +365,14 @@ ${sections.join("\n\n")}
     inputSchema: z.object({
       shotId: z.number().describe("要更新的分镜ID"),
       prompts: z.array(z.string()).describe("新的镜头提示词数组，每个提示词对应一个镜头"),
+      assetsTags: z.array(
+        z.object({
+          type: z.enum(["role", "props", "scene"]).describe("资源类型"),
+          text: z.string().describe("资源名称"),
+        }),
+      ),
     }),
-    execute: async ({ shotId, prompts }: { shotId: number; prompts: string[] }) => {
+    execute: async ({ shotId, prompts, assetsTags }: { shotId: number; prompts: string[]; assetsTags: AssetsType[] }) => {
       const existingIndex = this.shots.findIndex((item) => item.id === shotId);
 
       if (existingIndex === -1) {
@@ -306,6 +392,7 @@ ${sections.join("\n\n")}
           return { id: u.uuid(), prompt };
         }
       });
+      this.shots[existingIndex].assetsTags = assetsTags;
 
       this.log("更新分镜", `分镜 ${shotId}`);
       this.emit("shotsUpdated", this.shots);
@@ -358,6 +445,7 @@ ${sections.join("\n\n")}
       shotIds: z.array(z.number()).describe("要生成分镜图的分镜ID数组"),
     }),
     execute: async ({ shotIds }: { shotIds: number[] }) => {
+      return this.startShotImageGeneration(shotIds);
       const toGenerate: number[] = [];
       const alreadyGenerating: number[] = [];
       const notFound: number[] = [];
@@ -444,6 +532,7 @@ ${sections.join("\n\n")}
         prompts.map((p) => ({ prompt: p })),
         this.scriptId,
         this.projectId,
+        { assetsTags: shot.assetsTags },
       );
       // 通知前端正在分割图片
       this.emit("shotImageGenerateProgress", { shotId, status: "splitting", message: "正在分割宫格图片为单张镜头图" });
@@ -508,13 +597,25 @@ ${sections.join("\n\n")}
     return this.shots;
   }
 
+  async requestGenerateShotImage(shotIds: number[]): Promise<string> {
+    return this.startShotImageGeneration(shotIds);
+  }
+
   // ==================== 上下文构建 ====================
+
+  private async getOutlineData() {
+    const scriptData = await u.db("t_script").where({ id: this.scriptId, projectId: this.projectId }).first();
+    if (!scriptData?.outlineId) {
+      return null;
+    }
+
+    const row = await u.db("t_outline").where({ id: scriptData.outlineId, projectId: this.projectId }).first();
+    return row?.data ? JSON.parse(row.data) : null;
+  }
 
   private async buildEnvironmentContext(): Promise<string> {
     const projectInfo = await u.db("t_project").where({ id: this.projectId }).first();
-
-    const row = await u.db("t_outline").where({ id: this.scriptId, projectId: this.projectId }).first();
-    const outline: any | null = row?.data ? JSON.parse(row.data) : null;
+    const outline: any | null = await this.getOutlineData();
 
     // 分类提取资源名称
     const characters = outline?.characters?.map((i: any) => i.name) ?? [];
@@ -586,10 +687,10 @@ ${task}
           getScript: this.getScript,
           getAssets: this.getAssets,
           getSegments: this.getSegments,
+          getShots: this.getShots,
           addShots: this.addShots,
           updateShots: this.updateShots,
           deleteShots: this.deleteShots,
-          generateShotImage: this.generateShotImage,
         };
       default:
         return {
@@ -636,7 +737,7 @@ ${task}
     let fullResponse = "";
     for await (const item of fullStream) {
       if (item.type == "tool-call") {
-        this.emit("toolCall", { agent: "main", name: item.title, args: null });
+        this.emit("toolCall", { agent: agentType, name: item.title, args: null });
       }
       if (item.type == "text-delta") {
         fullResponse += item.text;
@@ -680,9 +781,8 @@ ${task}
       // this.createSubAgentTool("director", "调用导演。负责审核故事线和大纲，会自行调用 updateOutline 或 saveStoryline 进行修改。"),
       getScript: this.getScript,
       getSegments: this.getSegments,
+      getShots: this.getShots,
       generateShotImage: this.generateShotImage,
-      ...this.getSubAgentTools("segmentAgent"),
-      ...this.getSubAgentTools("shotAgent"),
     };
   }
 

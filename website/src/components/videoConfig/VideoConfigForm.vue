@@ -390,8 +390,10 @@ async function generatePrompt() {
       prompt: localConfig.prompt || "生成视频",
       images: images.map((img) => ({ filePath: img.filePath, prompt: img.prompt })),
       duration: localConfig.duration,
+      mode: localConfig.mode,
       type: localConfig.mode,
       videoConfigId: localConfig.id,
+      scriptId: props.scriptId,
     });
     localConfig.prompt = res.data;
     emitChange();
