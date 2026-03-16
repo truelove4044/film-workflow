@@ -16,10 +16,11 @@ function run(command, args, cwd) {
 
 function main() {
   const root = process.cwd();
+  const websiteDir = path.join(root, "website");
   const oauthVendor = path.join(root, "vendor", "openai-oauth");
 
   run("yarn", ["install"], root);
-  run("yarn", ["--cwd", "website", "install"], root);
+  run("yarn", ["install"], websiteDir);
   run("npx", ["--yes", "bun@1.2.18", "install"], oauthVendor);
 
   console.log("\n全部依赖安装完成。\n");
