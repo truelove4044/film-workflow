@@ -14,8 +14,11 @@ services:
       - "46000:46000"
     environment:
       - NODE_ENV=prod
+      - CHATGPT_OAUTH_AUTOSTART=true
+      - CODEX_AUTH_DIR=/root/.codex
     volumes:
       - ../logs:/var/log
+      - ~/.codex:/root/.codex
     healthcheck:
       test:
         [

@@ -10,6 +10,7 @@ import fs from "fs";
 import path from "path";
 import u from "@/utils";
 import jwt from "jsonwebtoken";
+import chatgptOauthRuntimeManager from "@/lib/chatgptOauthRuntimeManager";
 
 const app = express();
 let server: ReturnType<typeof app.listen> | null = null;
@@ -40,6 +41,8 @@ export default async function startServe(randomPort: Boolean = false) {
   console.log("文件目录:", rootDir);
 
   app.use(express.static(rootDir));
+
+  void chatgptOauthRuntimeManager.autoStartOnBoot();
 
   app.use(async (req, res, next) => {
     const setting = await u.db("t_setting").where("id", 1).select("tokenKey").first();

@@ -50,7 +50,7 @@ export default router.post(
         throw modelsRes.reason;
       }
 
-      const modelData = Array.isArray(modelsRes.data?.data) ? (modelsRes.data.data as OpenAIModelItem[]) : [];
+      const modelData = Array.isArray(modelsRes.value.data?.data) ? (modelsRes.value.data.data as OpenAIModelItem[]) : [];
       const models = modelData
         .map((item) => item?.id)
         .filter((id): id is string => typeof id === "string" && id.trim().length > 0)

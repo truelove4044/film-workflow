@@ -1,5 +1,11 @@
 # ChatGPT 登录（Codex 额度）接入说明
 
+## 前置条件
+
+- 需使用 **file-based credential storage**，并确保主机 `~/.codex/auth.json` 可读取。
+- 若仅挂载 `~/.codex` 但其中没有 `auth.json`，容器内无法保证读取到凭证。
+- `~/.codex/auth.json` 视同敏感凭证，不可提交到版本控制，也不可暴露给非必要用户或公开卷。
+
 ## 目录结构
 
 `openai-oauth` 已内置在项目目录：
@@ -41,3 +47,14 @@ yarn oauth:proxy
 - 此选项仅用于文本任务。
 - 图片/视频模型仍走原有供应商链路，不使用 Codex 额度。
 - 若提示凭证失效，请重新执行 `yarn oauth:login`。
+- 新增「登录配置」下方一键流程：可执行 `codex login --device-auth` 并自动拉起代理。
+
+## Docker 自动启动说明
+
+- Docker 默认会尝试自动启动 `openai-oauth proxy`。
+- 需要将主机 `~/.codex` 挂载到容器 `/root/.codex`（项目 compose 已配置）。
+- 若未找到 `/root/.codex/auth.json`，系统会将 proxy 标记为 `stopped`，不视为服务异常；此时可：
+  - 先在主机完成 `codex login`，或
+  - 在应用内点击「一键登录并启动代理」。
+- 代理默认绑定 `127.0.0.1:10531`，仅适用于 app 与 proxy 在同一容器。
+  - 若改为跨容器或需从 host/其他服务访问，需改成 `0.0.0.0:10531` 并配置对应 `ports/network`。

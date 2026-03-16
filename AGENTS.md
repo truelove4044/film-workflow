@@ -2,7 +2,7 @@
 
 ## Commit Message Rule
 
-1. 所有 `git commit` 訊息必須使用中文。
+1. 所有 `git commit` 訊息必須使用繁體中文。
 2. 可保留 Conventional Commit 前綴（例如 `feat:`、`fix:`、`docs:`），但主訊息需為中文。
 
 ## PowerShell Command Rule

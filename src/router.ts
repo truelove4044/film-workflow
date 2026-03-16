@@ -23,6 +23,8 @@ import route19 from "./routes/other/login";
 import route20 from "./routes/other/testAI";
 import route21 from "./routes/other/testImage";
 import route22 from "./routes/other/testVideo";
+import route84 from "./routes/other/chatgptOauthStart";
+import route85 from "./routes/other/chatgptOauthStatus";
 import route23 from "./routes/outline/addOutline";
 import route24 from "./routes/outline/agentsOutline";
 import route25 from "./routes/outline/delOutline";
@@ -108,6 +110,8 @@ export default async (app: Express) => {
   app.use("/other/testAI", route20);
   app.use("/other/testImage", route21);
   app.use("/other/testVideo", route22);
+  app.use("/other/chatgptOauth/start", route84);
+  app.use("/other/chatgptOauth/status", route85);
   app.use("/outline/addOutline", route23);
   app.use("/outline/agentsOutline", route24);
   app.use("/outline/delOutline", route25);

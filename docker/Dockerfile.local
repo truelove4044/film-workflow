@@ -28,7 +28,7 @@ RUN apk add --no-cache nginx supervisor && \
     mkdir -p /var/lib/nginx/logs /var/log/nginx && \
     npm config set registry https://registry.npmmirror.com/ && \
     yarn config set registry https://registry.npmmirror.com/ && \
-    npm install -g pm2
+    npm install -g pm2 @openai/codex openai-oauth
 
 # 复制后端文件
 COPY --from=builder /app/build ./build
