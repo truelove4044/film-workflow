@@ -65,9 +65,14 @@ const options = ref([
   // { value: "21:9", label: "21:9" },
 ]);
 function handleOk() {
+  const projectName = formState.value.name.trim();
+  if (!projectName) {
+    message.warning("项目名称必填");
+    return;
+  }
   axios
     .post("/project/addProject", {
-      name: formState.value.name ? formState.value.name : "名称",
+      name: projectName,
       intro: formState.value.intro ? formState.value.intro : "这个是一条小说简介",
       type: formState.value.type ? formState.value.type : "玄幻",
       artStyle: formState.value.artStyle ? formState.value.artStyle : "动漫",

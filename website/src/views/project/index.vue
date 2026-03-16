@@ -42,7 +42,7 @@
             </div>
           </div>
           <p v-if="project.intro" class="summary">
-            {{ project.intro }}
+            {{ normalizeMultilineText(project.intro) }}
           </p>
           <div class="time">
             <span>创建于 {{ dayjs(project?.createTime).format("YYYY-MM-DD HH:mm:ss") }}</span>
@@ -76,6 +76,10 @@ const projects = ref<
 >([]);
 
 const router = useRouter();
+function normalizeMultilineText(value?: string | null) {
+  if (!value) return "";
+  return value.replace(/\r\n/g, "\n").replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n");
+}
 function getProjects() {
   axios
     .post("/project/getProject")

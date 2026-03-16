@@ -27,7 +27,7 @@
             编辑
           </t-button>
         </h3>
-        <p class="summaryText" v-if="!introEdit">{{ project?.intro || "暂无简介" }}</p>
+        <p class="summaryText" v-if="!introEdit">{{ normalizedIntro || "暂无简介" }}</p>
         <div v-else>
           <a-textarea
             style="
@@ -127,9 +127,16 @@ const { project, projectId } = storeToRefs(store());
 const globalSettingEdit = ref(false);
 const introEdit = ref(false);
 const introEditData = ref("");
+const normalizedIntro = computed(() => normalizeMultilineText(project.value?.intro));
+
+function normalizeMultilineText(value?: string | null) {
+  if (!value) return "";
+  return value.replace(/\r\n/g, "\n").replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n");
+}
+
 function handleIntroEdit() {
   introEdit.value = true;
-  introEditData.value = project.value?.intro ?? "暂无简介";
+  introEditData.value = normalizeMultilineText(project.value?.intro) || "暂无简介";
 }
 function handleGlobalSettingEdit() {
   projectEditData.value = {
@@ -361,6 +368,8 @@ function updateProject() {
     .summaryText {
       color: var(--td-text-color-secondary);
       line-height: 1.7;
+      white-space: pre-wrap;
+      word-break: break-word;
     }
   }
   .projectEvents {
