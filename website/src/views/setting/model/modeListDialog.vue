@@ -642,9 +642,9 @@ function selectModel(model: ModelCard) {
 }
 
 async function selectChatgptOauthModel() {
+  await loadChatgptOauthStatus(chatgptOauthState.value.baseUrl || chatgptOauthBaseUrl);
   if (!chatgptOauthState.value.available || chatgptOauthState.value.models.length === 0) {
     message.warning("ChatGPT OAuth Proxy 不可用或暂无模型，请先启动代理并重试");
-    await loadChatgptOauthStatus(chatgptOauthState.value.baseUrl || chatgptOauthBaseUrl);
     return;
   }
   isCustomModel.value = false;

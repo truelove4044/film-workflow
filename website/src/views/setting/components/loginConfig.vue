@@ -21,19 +21,14 @@
         theme="info"
         message="前置条件：需使用 file-based credential storage，或先确认主机 ~/.codex/auth.json 已存在；否则仅挂载 ~/.codex 不保证容器可读取到凭证。" />
       <t-space size="small" style="margin-top: 12px">
-        <t-button theme="primary" :loading="oauthActionLoading" @click="startOauthFlow">一键登录并启动代理</t-button>
-        <t-button theme="default" :loading="oauthStatusLoading" @click="fetchOauthStatus">刷新状态</t-button>
+        <t-button theme="primary" :loading="oauthActionLoading" @click="startOauthFlow">登录ChatGPT(使用Codex Oauth)</t-button>
+        <t-button theme="default" :loading="oauthStatusLoading" @click="() => fetchOauthStatus()">刷新状态</t-button>
       </t-space>
 
       <div class="oauth-status">
         <t-tag :theme="getLoginTheme(oauthStatus.loginStatus)">登录状态：{{ getLoginLabel(oauthStatus.loginStatus) }}</t-tag>
         <t-tag :theme="getProxyTheme(oauthStatus.proxyStatus)">代理状态：{{ getProxyLabel(oauthStatus.proxyStatus) }}</t-tag>
       </div>
-
-      <div class="oauth-info">当前消息：{{ oauthStatus.message || "无" }}</div>
-      <div class="oauth-info">Proxy PID：{{ oauthStatus.pid ?? "无" }}</div>
-      <div class="oauth-info">凭证路径：{{ oauthStatus.authPath || "未检测" }}（{{ oauthStatus.authFileReadable ? "可读" : "不可读" }}）</div>
-      <div class="oauth-info">模型可用状态：{{ oauthStatus.proxyAvailable ? "可用" : "不可用" }}，可用模型数：{{ oauthStatus.modelCount }}</div>
 
       <t-textarea class="oauth-log" :value="oauthStatus.logs.join('\n')" readonly :autosize="{ minRows: 4, maxRows: 8 }" />
     </div>
@@ -65,6 +60,8 @@ interface OauthRuntimeStatus {
   lastUpdatedAt: number;
   authFileReadable: boolean;
   authPath: string;
+  authUrl: string;
+  authCode: string;
   proxyAvailable: boolean;
   proxyHealthy: boolean;
   modelCount: number;
@@ -75,6 +72,7 @@ const loading = ref(false);
 const oauthActionLoading = ref(false);
 const oauthStatusLoading = ref(false);
 const pollTimer = ref<ReturnType<typeof setInterval> | null>(null);
+const lastOpenedAuthKey = ref("");
 
 const formData = ref<UserForm>({
   id: null,
@@ -92,6 +90,8 @@ const oauthStatus = ref<OauthRuntimeStatus>({
   lastUpdatedAt: 0,
   authFileReadable: false,
   authPath: "",
+  authUrl: "",
+  authCode: "",
   proxyAvailable: false,
   proxyHealthy: false,
   modelCount: 0,
@@ -153,6 +153,28 @@ function applyOauthStatus(data: Partial<OauthRuntimeStatus> | undefined) {
   };
 }
 
+function buildAuthKey(status: Pick<OauthRuntimeStatus, "authUrl" | "authCode">) {
+  return `${status.authUrl || ""}|${status.authCode || ""}`;
+}
+
+function openOauthPage(force = false) {
+  const authUrl = oauthStatus.value.authUrl;
+  if (!authUrl) return;
+
+  const authKey = buildAuthKey(oauthStatus.value);
+  if (!force && authKey && authKey === lastOpenedAuthKey.value) return;
+  lastOpenedAuthKey.value = authKey;
+
+  const popup = window.open(authUrl, "_blank", "noopener,noreferrer");
+  if (!popup) {
+    const anchor = document.createElement("a");
+    anchor.href = authUrl;
+    anchor.target = "_blank";
+    anchor.rel = "noopener noreferrer";
+    anchor.click();
+  }
+}
+
 function shouldContinuePolling(status: OauthRuntimeStatus) {
   if (status.running) return true;
   if (status.loginStatus === "awaiting_auth") return true;
@@ -177,9 +199,13 @@ async function fetchOauthStatus(showLoading = true) {
   try {
     const res = await axios.get("/other/chatgptOauth/status");
     applyOauthStatus(res.data as Partial<OauthRuntimeStatus>);
+    if (oauthStatus.value.awaiting_auth && oauthStatus.value.authUrl) {
+      openOauthPage();
+    }
     if (shouldContinuePolling(oauthStatus.value)) {
       startPolling();
     } else {
+      lastOpenedAuthKey.value = "";
       stopPolling();
     }
   } catch (error) {
@@ -194,8 +220,11 @@ async function startOauthFlow() {
   oauthActionLoading.value = true;
   try {
     const res = await axios.post("/other/chatgptOauth/start");
-    const data = res.data as (Partial<OauthRuntimeStatus> & { accepted?: boolean; actionMessage?: string });
+    const data = res.data as Partial<OauthRuntimeStatus> & { accepted?: boolean; actionMessage?: string };
     applyOauthStatus(data);
+    if (oauthStatus.value.authUrl) {
+      openOauthPage(true);
+    }
     if (data.accepted === false) {
       window.$message.warning(data.actionMessage || "流程正在执行中");
     } else {
@@ -259,12 +288,6 @@ onBeforeUnmount(() => {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
-}
-
-.oauth-info {
-  margin-top: 8px;
-  color: #444;
-  font-size: 13px;
 }
 
 .oauth-log {

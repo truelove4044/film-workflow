@@ -6,8 +6,10 @@
           v-if="modelForm.manufacturer === 'chatgptOauth'"
           v-model:value="modelForm.model"
           show-search
-          :filter-option="false"
-          :options="chatgptOauthModels"
+          :filter-option="filterChatgptOauthOptions"
+          :get-popup-container="getSelectPopupContainer"
+          :options="resolvedChatgptOauthModels"
+          :disabled="isChatgptOauthSaveDisabled"
           placeholder="请选择可用模型（来自 OAuth Proxy）" />
         <a-input v-else v-model:value="modelForm.model" placeholder="请输入模型标识" />
       </a-form-item>
@@ -17,8 +19,11 @@
       <a-form-item label="API Key" v-if="modelForm.manufacturer !== 'chatgptOauth'">
         <a-input-password v-model:value="modelForm.apiKey" placeholder="请输入 API Key" />
       </a-form-item>
-      <a-form-item v-else>
-        <a-alert type="info" show-icon message="ChatGPT OAuth 模式将自动使用本机登录凭据，无需手动填写 API Key" />
+      <a-form-item v-if="modelForm.manufacturer === 'chatgptOauth' && isChatgptOauthSaveDisabled">
+        <a-alert type="warning" show-icon message="暂无可用 OAuth 模型，请先确认代理连接正常后再试" />
+      </a-form-item>
+      <a-form-item v-else-if="modelForm.manufacturer === 'chatgptOauth' && showChatgptOauthModelWarning">
+        <a-alert type="warning" show-icon :message="`当前配置模型 ${modelForm.model} 未出现在最新 OAuth 模型列表中，请确认是否需要改选。`" />
       </a-form-item>
       <a-form-item v-if="currentWebsite">
         <a :href="currentWebsite" target="_blank" rel="noopener noreferrer" style="font-size: 14px">
@@ -27,7 +32,7 @@
       </a-form-item>
       <a-form-item style="text-align: right; margin-bottom: 0">
         <a-button style="margin-right: 8px" @click="showConfigModal = false">取消</a-button>
-        <a-button type="primary" @click="keep">保存</a-button>
+        <a-button type="primary" :disabled="isChatgptOauthSaveDisabled" @click="keep">保存</a-button>
       </a-form-item>
     </a-form>
   </el-dialog>
@@ -36,7 +41,7 @@
 <script setup lang="ts">
 import axios from "@/utils/axios";
 import { ElMessage } from "element-plus";
-import { computed } from "vue";
+import { computed, watch } from "vue";
 interface RowData {
   id: number;
   name?: string;
@@ -86,6 +91,46 @@ const modelForm = defineModel<RowData>("modelForm", {
   }),
 });
 const chatgptOauthModels = computed(() => props.chatgptOauthModels as Array<{ label: string; value: string }>);
+const resolvedChatgptOauthModels = computed(() => {
+  const options = [...chatgptOauthModels.value];
+  const currentModel = modelForm.value.model?.trim();
+
+  if (
+    modelForm.value.manufacturer === "chatgptOauth" &&
+    currentModel &&
+    !options.some((item) => item.value === currentModel)
+  ) {
+    options.unshift({
+      label: `${currentModel}（当前配置）`,
+      value: currentModel,
+    });
+  }
+
+  return options;
+});
+const isChatgptOauthSaveDisabled = computed(() => {
+  return modelForm.value.manufacturer === "chatgptOauth" && chatgptOauthModels.value.length === 0;
+});
+const showChatgptOauthModelWarning = computed(() => {
+  return (
+    modelForm.value.manufacturer === "chatgptOauth" &&
+    chatgptOauthModels.value.length > 0 &&
+    !!modelForm.value.model &&
+    !chatgptOauthModels.value.some((item) => item.value === modelForm.value.model)
+  );
+});
+
+const getSelectPopupContainer = (triggerNode: HTMLElement) => {
+  return triggerNode.parentElement ?? triggerNode;
+};
+
+const filterChatgptOauthOptions = (input: string, option?: { label?: string; value?: string }) => {
+  const keyword = input.trim().toLowerCase();
+  if (!keyword) return true;
+  const label = String(option?.label ?? "").toLowerCase();
+  const value = String(option?.value ?? "").toLowerCase();
+  return label.includes(keyword) || value.includes(keyword);
+};
 
 const configModalTitle = computed(() => {
   if (props.isCustomModel) {
@@ -93,6 +138,23 @@ const configModalTitle = computed(() => {
   }
   return `配置 ${modelForm.value.model}`;
 });
+
+function syncChatgptOauthModelSelection() {
+  if (modelForm.value.manufacturer !== "chatgptOauth") return;
+  if (modelForm.value.model?.trim()) return;
+  if (!chatgptOauthModels.value.length) return;
+  modelForm.value.model = chatgptOauthModels.value[0].value;
+}
+
+watch(
+  [showConfigModal, chatgptOauthModels, () => modelForm.value.manufacturer],
+  ([visible]) => {
+    if (!visible) return;
+    syncChatgptOauthModelSelection();
+  },
+  { immediate: true },
+);
+
 async function keep() {
   const { type, modelType, model, baseUrl, manufacturer, apiKey, id } = modelForm.value;
   const resolvedApiKey = manufacturer === "chatgptOauth" ? apiKey || "oauth-local" : apiKey;
@@ -104,6 +166,10 @@ async function keep() {
   }
   if (!resolvedApiKey) {
     ElMessage.error("请输入 API Key");
+    return;
+  }
+  if (manufacturer === "chatgptOauth" && !chatgptOauthModels.value.length) {
+    ElMessage.error("暂无可用 OAuth 模型");
     return;
   }
   if ((manufacturer == "other" || manufacturer === "chatgptOauth") && baseUrl.trim() == "") {

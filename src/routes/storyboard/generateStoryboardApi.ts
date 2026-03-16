@@ -9,7 +9,7 @@ const router = express.Router();
 export default router.post(
   "/",
   validateFields({
-    filePath: z.record(z.union([z.string(), z.number()])),
+    filePath: z.record(z.string(), z.union([z.string(), z.number()])),
     prompt: z.string(),
     projectId: z.number(),
     assetsId: z.number().nullable().optional(),

@@ -13,6 +13,7 @@ services:
     ports:
       - "80"
       - "60000:60000"
+      - "127.0.0.1:1455:1455"
     environment:
       - NODE_ENV=prod
       - CHATGPT_OAUTH_AUTOSTART=true

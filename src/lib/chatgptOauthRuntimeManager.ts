@@ -38,6 +38,8 @@ export interface ChatgptOauthRuntimeStatus {
   lastUpdatedAt: number;
   authFileReadable: boolean;
   authPath: string;
+  authUrl: string;
+  authCode: string;
   proxyAvailable: boolean;
   proxyHealthy: boolean;
   modelCount: number;
@@ -64,6 +66,8 @@ class ChatgptOauthRuntimeManager {
     lastUpdatedAt: Date.now(),
     authFileReadable: false,
     authPath: "",
+    authUrl: "",
+    authCode: "",
     proxyAvailable: false,
     proxyHealthy: false,
     modelCount: 0,
@@ -92,6 +96,25 @@ class ChatgptOauthRuntimeManager {
       nextLogs.splice(0, nextLogs.length - this.maxLogs);
     }
     this.setState({ logs: nextLogs });
+  }
+
+  private stripAnsi(text: string) {
+    return text.replace(/\u001b\[[0-9;]*m/g, "");
+  }
+
+  private updateAuthHints(prefix: string, line: string) {
+    if (prefix !== "login") return;
+
+    const authUrlMatch = line.match(/https:\/\/auth\.openai\.com\/(?:codex\/device|oauth\/authorize)\S*/i);
+    if (authUrlMatch) {
+      this.setState({ authUrl: authUrlMatch[0] });
+      return;
+    }
+
+    const authCodeMatch = line.match(/^[A-Z0-9]{4,}(?:-[A-Z0-9]{4,})+$/);
+    if (authCodeMatch) {
+      this.setState({ authCode: authCodeMatch[0] });
+    }
   }
 
   private delay(ms: number): Promise<void> {
@@ -178,9 +201,10 @@ class ChatgptOauthRuntimeManager {
 
     const lines = text
       .split(/\r?\n/)
-      .map((line) => line.trim())
+      .map((line) => this.stripAnsi(line).trim())
       .filter((line) => !!line);
     for (const line of lines) {
+      this.updateAuthHints(prefix, line);
       this.pushLog("info", `${prefix}: ${line}`);
     }
   }
@@ -196,7 +220,9 @@ class ChatgptOauthRuntimeManager {
       this.setState({
         loginStatus: "awaiting_auth",
         awaiting_auth: true,
-        message: "请完成外部装置授权（device auth）",
+        authUrl: "",
+        authCode: "",
+        message: "请在浏览器中完成 Codex 授权",
       });
 
       const timeout = setTimeout(() => {
@@ -405,10 +431,14 @@ class ChatgptOauthRuntimeManager {
     this.setState({
       loginStatus: "running",
       awaiting_auth: false,
+      authUrl: "",
+      authCode: "",
       message: "开始执行 Codex 登录...",
     });
 
     const candidates: CommandSpec[] = [
+      { command: "codex", args: ["login"] },
+      { command: "npx", args: ["--yes", "@openai/codex", "login"] },
       { command: "codex", args: ["login", "--device-auth"] },
       { command: "npx", args: ["--yes", "@openai/codex", "login", "--device-auth"] },
     ];
@@ -417,6 +447,8 @@ class ChatgptOauthRuntimeManager {
     this.setState({
       loginStatus: "success",
       awaiting_auth: false,
+      authUrl: "",
+      authCode: "",
       message: "Codex 登录成功",
     });
   }
@@ -465,6 +497,8 @@ class ChatgptOauthRuntimeManager {
       loginStatus: "success",
       proxyStatus: "running",
       awaiting_auth: false,
+      authUrl: "",
+      authCode: "",
       message: "登录并启动代理成功",
     });
   }
@@ -475,11 +509,20 @@ class ChatgptOauthRuntimeManager {
     this.setState({
       loginStatus: "failed",
       awaiting_auth: false,
+      authUrl: "",
+      authCode: "",
       message: normalized.message || "一键登录流程失败",
     });
   }
 
   public triggerStartFlow() {
+    if (this.flowPromise && this.state.awaiting_auth) {
+      return {
+        accepted: false,
+        message: "授权进行中，已提供授权页面信息",
+      };
+    }
+
     if (this.flowPromise) {
       return {
         accepted: false,

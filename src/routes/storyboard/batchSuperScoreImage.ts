@@ -8,6 +8,14 @@ import axios from "axios";
 
 const router = express.Router();
 
+function isFulfilled<T>(result: PromiseSettledResult<T>): result is PromiseFulfilledResult<T> {
+  return result.status === "fulfilled";
+}
+
+function isRejected<T>(result: PromiseSettledResult<T>): result is PromiseRejectedResult {
+  return result.status === "rejected";
+}
+
 type CellInput = {
   id: string;
   prompt?: string;
@@ -116,8 +124,8 @@ export default router.post(
       }),
     );
 
-    const fulfilled = results.filter((item: any) => item.status === "fulfilled").map((item: any) => item.value);
-    const rejected = results.filter((item: any) => item.status === "rejected");
+    const fulfilled = results.filter(isFulfilled).map((item) => item.value);
+    const rejected = results.filter(isRejected);
 
     if (!fulfilled.length && rejected.length) {
       return res.status(500).send(error(u.error(rejected[0].reason).message));
