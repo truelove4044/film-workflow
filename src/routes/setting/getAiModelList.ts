@@ -20,6 +20,11 @@ export default router.post(
     const modelLists = await u
       .db(sqlTableMap[type as "image" | "text" | "video"])
       .whereNot("manufacturer", "other")
+      .modify((qb) => {
+        if (type === "text") {
+          qb.whereNot("manufacturer", "chatgptOauth");
+        }
+      })
       .select("id", "manufacturer", "model");
     const result: Record<string, any[]> = {};
     for (const row of modelLists) {

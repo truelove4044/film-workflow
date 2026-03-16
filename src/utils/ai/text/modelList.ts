@@ -35,6 +35,7 @@ const instanceMap = {
   modelScope: (options: OpenAIProviderSettings) => createOpenAI({ ...options, headers: { ...options?.headers, "X-ModelScope-Async-Mode": "true" } }),
   xai: createXai,
   other: createOpenAI,
+  chatgptOauth: createOpenAI,
   grsai:createOpenAI
 };
 const modelList: Owned[] = [
@@ -468,6 +469,15 @@ const modelList: Owned[] = [
     model: "gpt-4.1",
     responseFormat: "object",
     image: true,
+    think: false,
+    instance: createOpenAI,
+    tool: true,
+  },
+  {
+    manufacturer: "chatgptOauth",
+    model: "gpt-5.4",
+    responseFormat: "object",
+    image: false,
     think: false,
     instance: createOpenAI,
     tool: true,

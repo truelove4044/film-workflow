@@ -22,5 +22,6 @@ export default {
   anthropic: anthropic,
   runninghub: runninghub,
   gemini: gemini,
-  grsai
+  grsai,
+  chatgptOauth: openai,
 } as const;

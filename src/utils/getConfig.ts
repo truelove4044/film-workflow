@@ -10,7 +10,7 @@ interface BaseConfig {
 
 interface TextResData extends BaseConfig {
   baseURL: string;
-  manufacturer: "deepseek" | "openAi" | "doubao" | "other";
+  manufacturer: "deepseek" | "openAi" | "doubao" | "other" | "chatgptOauth";
 }
 
 // 图像模型配置接口

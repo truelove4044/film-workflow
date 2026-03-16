@@ -2,13 +2,23 @@
   <el-dialog v-model="showConfigModal" :title="configModalTitle" :close-on-click-modal="false" :footer="null" width="520px">
     <a-form :model="modelForm">
       <a-form-item label="模型名称">
-        <a-input v-model:value="modelForm.model" placeholder="请输入模型标识" />
+        <a-select
+          v-if="modelForm.manufacturer === 'chatgptOauth'"
+          v-model:value="modelForm.model"
+          show-search
+          :filter-option="false"
+          :options="chatgptOauthModels"
+          placeholder="请选择可用模型（来自 OAuth Proxy）" />
+        <a-input v-else v-model:value="modelForm.model" placeholder="请输入模型标识" />
       </a-form-item>
       <a-form-item label="Base URL" v-if="modelForm.manufacturer !== 'runninghub'">
         <a-input v-model:value="modelForm.baseUrl" :placeholder="props.defaultPlaceHolder" />
       </a-form-item>
-      <a-form-item label="API Key">
+      <a-form-item label="API Key" v-if="modelForm.manufacturer !== 'chatgptOauth'">
         <a-input-password v-model:value="modelForm.apiKey" placeholder="请输入 API Key" />
+      </a-form-item>
+      <a-form-item v-else>
+        <a-alert type="info" show-icon message="ChatGPT OAuth 模式将自动使用本机登录凭据，无需手动填写 API Key" />
       </a-form-item>
       <a-form-item v-if="currentWebsite">
         <a :href="currentWebsite" target="_blank" rel="noopener noreferrer" style="font-size: 14px">
@@ -26,7 +36,7 @@
 <script setup lang="ts">
 import axios from "@/utils/axios";
 import { ElMessage } from "element-plus";
-import { ref } from "vue";
+import { computed } from "vue";
 interface RowData {
   id: number;
   name?: string;
@@ -55,6 +65,10 @@ const props = defineProps({
     type: Object,
     default: {},
   },
+  chatgptOauthModels: {
+    type: Array,
+    default: () => [],
+  },
 });
 const emit = defineEmits(["fetchModelList"]);
 const showConfigModal = defineModel<boolean>({
@@ -71,6 +85,7 @@ const modelForm = defineModel<RowData>("modelForm", {
     modelType: "",
   }),
 });
+const chatgptOauthModels = computed(() => props.chatgptOauthModels as Array<{ label: string; value: string }>);
 
 const configModalTitle = computed(() => {
   if (props.isCustomModel) {
@@ -80,19 +95,23 @@ const configModalTitle = computed(() => {
 });
 async function keep() {
   const { type, modelType, model, baseUrl, manufacturer, apiKey, id } = modelForm.value;
+  const resolvedApiKey = manufacturer === "chatgptOauth" ? apiKey || "oauth-local" : apiKey;
 
   // 验证必填项
   if (!model) {
     ElMessage.error("请输入模型标识");
     return;
   }
-  if (!apiKey) {
+  if (!resolvedApiKey) {
     ElMessage.error("请输入 API Key");
     return;
   }
-  if (manufacturer == "other" && baseUrl.trim() == "") {
+  if ((manufacturer == "other" || manufacturer === "chatgptOauth") && baseUrl.trim() == "") {
     ElMessage.error("请输入 Base URL");
     return;
+  }
+  if (manufacturer === "chatgptOauth") {
+    modelForm.value.apiKey = resolvedApiKey;
   }
   if (id == 0) {
     try {
@@ -102,7 +121,7 @@ async function keep() {
         model,
         baseUrl,
         manufacturer,
-        apiKey,
+        apiKey: resolvedApiKey,
       });
       ElMessage.success("新增成功");
       emit("fetchModelList");
@@ -118,7 +137,7 @@ async function keep() {
         model,
         baseUrl,
         manufacturer,
-        apiKey,
+        apiKey: resolvedApiKey,
       });
       ElMessage.success("编辑成功");
       emit("fetchModelList");

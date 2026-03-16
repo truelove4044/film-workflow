@@ -41,6 +41,8 @@
     "db:restore:docker": "tsx scripts/db-backup.ts restore --container toonflow-local",
     "prompts:export:docker": "tsx scripts/export-prompts.ts --container toonflow-local --outDir backup/prompts",
     "prompts:import:docker": "tsx scripts/import-prompts.ts --container toonflow-local --inDir backup/prompts",
+    "oauth:login": "npx @openai/codex login",
+    "oauth:proxy": "npx openai-oauth --host 127.0.0.1 --port 10531",
     "debug:ai": "npx @ai-sdk/devtools",
     "license": "bun run scripts/license.ts"
   },

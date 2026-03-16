@@ -46,8 +46,29 @@
             <a-divider style="margin: 16px 0" />
 
             <div class="cards-grid">
-              <a-empty v-if="getFilteredModels(tab.key).length === 0" description="未找到匹配的模型" :image="Empty.PRESENTED_IMAGE_SIMPLE" />
+              <a-empty
+                v-if="getFilteredModels(tab.key).length === 0 && tab.key !== 'text'"
+                description="未找到匹配的模型"
+                :image="Empty.PRESENTED_IMAGE_SIMPLE" />
               <template v-else>
+                <div v-if="tab.key === 'text'" class="model-card chatgpt-oauth-card" @click="selectChatgptOauthModel">
+                  <div class="card-icon">
+                    <i-text fill="#1890ff" />
+                  </div>
+                  <div class="card-header">
+                    <h3>ChatGPT 登录（Codex额度）</h3>
+                    <a-tag :color="chatgptOauthState.available ? 'green' : 'red'">
+                      {{ chatgptOauthState.available ? "可用" : "不可用" }}
+                    </a-tag>
+                  </div>
+                  <div class="card-body">
+                    <p class="model-description">使用本机 OAuth Proxy：{{ chatgptOauthState.baseUrl || chatgptOauthBaseUrl }}</p>
+                    <p class="model-description">
+                      可用模型：{{ chatgptOauthState.modelCount }} 个
+                      <span v-if="chatgptOauthState.message">（{{ chatgptOauthState.message }}）</span>
+                    </p>
+                  </div>
+                </div>
                 <div
                   v-for="model in getFilteredModels(tab.key)"
                   :key="`${model.manufacturer}-${model.modelType}-${model.model}`"
@@ -87,6 +108,7 @@
       :isCustomModel="isCustomModel"
       :defaultPlaceHolder="getDefaultBaseUrlPlaceholder"
       :manufacturerNames="manufacturerNames"
+      :chatgptOauthModels="chatgptOauthState.models"
       @fetchModelList="sure" />
   </el-dialog>
 </template>
@@ -113,6 +135,15 @@ const activeTab = ref<string>("text");
 const showConfigModal = ref<boolean>(false);
 // 是否是自定义模型
 const isCustomModel = ref<boolean>(false);
+const chatgptOauthBaseUrl = "http://127.0.0.1:10531/v1";
+const chatgptOauthState = ref({
+  available: false,
+  healthy: false,
+  baseUrl: chatgptOauthBaseUrl,
+  modelCount: 0,
+  models: [] as { label: string; value: string }[],
+  message: "尚未检测",
+});
 // 搜索关键词
 const searchKeyword = ref<string>("");
 // 选中的厂商列表
@@ -144,7 +175,8 @@ const websites = ref<Record<string, string>>({
   anthropic: "",
   runninghub: "https://www.runninghub.cn/enterprise-api/consumerApi",
   gemini: "https://ai.google.dev/gemini-api/docs/api-key?hl=zh-cn",
-  grsai:"https://grsai.ai/zh/dashboard/api-keys"
+  grsai: "https://grsai.ai/zh/dashboard/api-keys",
+  chatgptOauth: "",
 });
 
 const currentWebsite = computed(() => {
@@ -167,6 +199,7 @@ const manufacturerNames: Record<string, string> = {
   modelScope: "魔塔",
   xai: "XAI",
   grsai: "Grsai",
+  chatgptOauth: "ChatGPT登录",
   other: "其他",
 };
 
@@ -187,6 +220,7 @@ function getManufacturerColor(manufacturer: string): string {
     modelScope: "#634BFE",
     xai: "red",
     grsai: "#2B7FFF",
+    chatgptOauth: "geekblue",
     other: "default",
   };
   return colors[manufacturer] || "default";
@@ -260,6 +294,11 @@ const manufacturerDefaultBaseUrls: Record<string, Record<string, string>> = {
     text: "https://grsai.dakka.com.cn/v1",
     image: "https://grsai.dakka.com.cn/v1/draw/nano-banana|https://grsai.dakka.com.cn/v1/draw/result",
     video: "https://grsai.dakka.com.cn/v1/video/{model}|https://grsai.dakka.com.cn/v1/draw/result",
+  },
+  chatgptOauth: {
+    text: chatgptOauthBaseUrl,
+    image: "",
+    video: "",
   },
   other: {
     text: "",
@@ -602,6 +641,27 @@ function selectModel(model: ModelCard) {
   showConfigModal.value = true;
 }
 
+async function selectChatgptOauthModel() {
+  if (!chatgptOauthState.value.available || chatgptOauthState.value.models.length === 0) {
+    message.warning("ChatGPT OAuth Proxy 不可用或暂无模型，请先启动代理并重试");
+    await loadChatgptOauthStatus(chatgptOauthState.value.baseUrl || chatgptOauthBaseUrl);
+    return;
+  }
+  isCustomModel.value = false;
+  modelForm.value = {
+    id: 0,
+    name: "",
+    type: "text",
+    modelType: "text",
+    model: chatgptOauthState.value.models[0]?.value || "",
+    baseUrl: chatgptOauthState.value.baseUrl || chatgptOauthBaseUrl,
+    manufacturer: "chatgptOauth",
+    createTime: 0,
+    apiKey: "oauth-local",
+  };
+  showConfigModal.value = true;
+}
+
 // 选择自定义模型
 function selectCustomModel(type: string) {
   isCustomModel.value = true;
@@ -645,6 +705,32 @@ function sure() {
   emit("fetchModelList");
   modelShow.value = false;
 }
+
+async function loadChatgptOauthStatus(baseUrl?: string) {
+  try {
+    const res = await axios.post("/setting/getChatgptOauthModels", {
+      baseUrl: baseUrl || chatgptOauthState.value.baseUrl || chatgptOauthBaseUrl,
+    });
+    chatgptOauthState.value = {
+      available: !!res.data?.available,
+      healthy: !!res.data?.healthy,
+      baseUrl: res.data?.baseUrl || baseUrl || chatgptOauthBaseUrl,
+      modelCount: Number(res.data?.modelCount || 0),
+      models: Array.isArray(res.data?.models) ? res.data.models : [],
+      message: res.data?.available ? "连接正常" : res.data?.message || "代理不可用",
+    };
+  } catch (err: any) {
+    chatgptOauthState.value = {
+      available: false,
+      healthy: false,
+      baseUrl: baseUrl || chatgptOauthBaseUrl,
+      modelCount: 0,
+      models: [],
+      message: err?.message || "代理不可用",
+    };
+  }
+}
+
 function getData() {
   axios
     .post("/setting/getAiModelList", {
@@ -659,6 +745,9 @@ function getData() {
         videoModelPresets.value = res.data;
       }
     });
+  if (activeTab.value === "text") {
+    void loadChatgptOauthStatus();
+  }
 }
 </script>
 
@@ -807,6 +896,11 @@ function getData() {
     text-align: center;
     font-size: 13px;
   }
+}
+
+.chatgpt-oauth-card {
+  border-color: #b7d6ff;
+  background: linear-gradient(180deg, #f7fbff 0%, #eef6ff 100%);
 }
 
 // 筛选和搜索区域样式

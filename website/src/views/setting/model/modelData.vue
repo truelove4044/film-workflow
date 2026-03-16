@@ -186,6 +186,7 @@
       :isCustomModel="false"
       :defaultPlaceHolder="defaultPlaceHolder"
       :manufacturerNames="manufacturerNames"
+      :chatgptOauthModels="chatgptOauthModels"
       @fetchModelList="fetchModelList" />
 
     <!-- 图像测试结果预览弹窗 -->
@@ -340,6 +341,7 @@ const editModelForm = ref<RowData>({
   manufacturer: "",
   createTime: 0,
 });
+const chatgptOauthModels = ref<Array<{ label: string; value: string }>>([]);
 
 // 网站链接配置
 const websites = ref<Record<string, string>>({
@@ -354,6 +356,7 @@ const websites = ref<Record<string, string>>({
   anthropic: "",
   runninghub: "https://www.runninghub.cn/enterprise-api/consumerApi",
   gemini: "https://ai.google.dev/gemini-api/docs/api-key?hl=zh-cn",
+  chatgptOauth: "",
 });
 
 const currentWebsite = computed(() => {
@@ -373,6 +376,7 @@ const manufacturerNames: Record<string, string> = {
   anthropic: "Anthropic",
   runninghub: "RunningHUB",
   gemini: "Gemini",
+  chatgptOauth: "ChatGPT登录",
   other: "其他",
 };
 
@@ -412,6 +416,9 @@ const manufacturerDefaultBaseUrls: Record<string, Record<string, string>> = {
   gemini: {
     text: "https://generativelanguage.googleapis.com",
   },
+  chatgptOauth: {
+    text: "http://127.0.0.1:10531/v1",
+  },
 };
 
 // 获取默认 BaseURL 的 placeholder
@@ -430,12 +437,13 @@ const defaultPlaceHolder = computed((): string => {
 });
 async function testAi(row: RowData) {
   const { model, apiKey, baseUrl, manufacturer } = row;
+  const resolvedApiKey = manufacturer === "chatgptOauth" ? apiKey || "oauth-local" : apiKey;
 
   if (!model) {
     ElMessage.warning("请先填写模型名称");
     return;
   }
-  if (!apiKey) {
+  if (!resolvedApiKey) {
     ElMessage.warning("请先填写 API Key");
     return;
   }
@@ -460,7 +468,7 @@ async function testAi(row: RowData) {
     }
     const res = await axios.post(queryUrl, {
       modelName: model,
-      apiKey: apiKey,
+      apiKey: resolvedApiKey,
       baseURL: baseUrl || undefined,
       manufacturer,
     });
@@ -492,6 +500,9 @@ async function testAi(row: RowData) {
 //编辑模型
 function editModelBtn(row: RowData) {
   editModelForm.value = { ...row };
+  if (row.manufacturer === "chatgptOauth") {
+    void loadChatgptOauthModels(row.baseUrl);
+  }
   editDialogVisible.value = true;
 }
 watch(
@@ -499,10 +510,21 @@ watch(
   (val) => {
     if (val == true) {
       fetchModelList();
+      void loadChatgptOauthModels();
     }
   },
   { deep: true },
 );
+async function loadChatgptOauthModels(baseUrl?: string) {
+  try {
+    const res = await axios.post("/setting/getChatgptOauthModels", {
+      baseUrl: baseUrl || "http://127.0.0.1:10531/v1",
+    });
+    chatgptOauthModels.value = Array.isArray(res.data?.models) ? res.data.models : [];
+  } catch {
+    chatgptOauthModels.value = [];
+  }
+}
 //查询模型列表
 async function fetchModelList() {
   const res = await axios.post("/setting/getSetting");

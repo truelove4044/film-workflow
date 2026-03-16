@@ -56,6 +56,7 @@ import route52 from "./routes/setting/getVideoModelDetail";
 import route53 from "./routes/setting/getVideoModelList";
 import route54 from "./routes/setting/updateModel";
 import route55 from "./routes/setting/updeteModel";
+import route83 from "./routes/setting/getChatgptOauthModels";
 import route56 from "./routes/storyboard/batchSuperScoreImage";
 import route57 from "./routes/storyboard/chatStoryboard";
 import route58 from "./routes/storyboard/delStoryboard";
@@ -140,6 +141,7 @@ export default async (app: Express) => {
   app.use("/setting/getVideoModelList", route53);
   app.use("/setting/updateModel", route54);
   app.use("/setting/updeteModel", route55);
+  app.use("/setting/getChatgptOauthModels", route83);
   app.use("/storyboard/batchSuperScoreImage", route56);
   app.use("/storyboard/chatStoryboard", route57);
   app.use("/storyboard/delStoryboard", route58);
