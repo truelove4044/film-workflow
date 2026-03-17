@@ -72,6 +72,7 @@ const loading = ref(false);
 const oauthActionLoading = ref(false);
 const oauthStatusLoading = ref(false);
 const pollTimer = ref<ReturnType<typeof setInterval> | null>(null);
+const pollIntervalMs = ref(5000);
 const lastOpenedAuthKey = ref("");
 
 const formData = ref<UserForm>({
@@ -181,11 +182,13 @@ function shouldContinuePolling(status: OauthRuntimeStatus) {
   return status.proxyStatus === "starting";
 }
 
-function startPolling() {
-  if (pollTimer.value) return;
+function startPolling(intervalMs = 5000) {
+  if (pollTimer.value && pollIntervalMs.value === intervalMs) return;
+  stopPolling();
+  pollIntervalMs.value = intervalMs;
   pollTimer.value = setInterval(() => {
     void fetchOauthStatus(false);
-  }, 2500);
+  }, intervalMs);
 }
 
 function stopPolling() {
@@ -197,20 +200,23 @@ function stopPolling() {
 async function fetchOauthStatus(showLoading = true) {
   if (showLoading) oauthStatusLoading.value = true;
   try {
-    const res = await axios.get("/other/chatgptOauth/status");
+    const res = await axios.post("/other/chatgptOauth/status", {
+      _ts: Date.now(),
+    });
     applyOauthStatus(res.data as Partial<OauthRuntimeStatus>);
     if (oauthStatus.value.awaiting_auth && oauthStatus.value.authUrl) {
       openOauthPage();
     }
     if (shouldContinuePolling(oauthStatus.value)) {
-      startPolling();
+      startPolling(2500);
     } else {
       lastOpenedAuthKey.value = "";
-      stopPolling();
+      startPolling(5000);
     }
   } catch (error) {
-    window.$message.error("获取 OAuth 状态失败");
-    stopPolling();
+    if (showLoading) {
+      window.$message.error("获取 OAuth 状态失败");
+    }
   } finally {
     if (showLoading) oauthStatusLoading.value = false;
   }
@@ -230,7 +236,7 @@ async function startOauthFlow() {
     } else {
       window.$message.success(data.actionMessage || "已开始执行一键登录流程");
     }
-    startPolling();
+    startPolling(2500);
   } catch (error) {
     window.$message.error("一键登录启动失败");
   } finally {
@@ -271,6 +277,7 @@ function getProxyTheme(status: ProxyStatus): "default" | "primary" | "success" |
 onMounted(() => {
   void fetchUserInfo();
   void fetchOauthStatus();
+  startPolling(5000);
 });
 
 onBeforeUnmount(() => {
