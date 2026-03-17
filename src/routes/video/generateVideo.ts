@@ -7,6 +7,7 @@ import { validateFields } from "@/middleware/middleware";
 import { t_config } from "@/types/database";
 import sharp from "sharp";
 import modelList from "@/utils/ai/video/modelList";
+import { ClipPlanResult, buildClipPlanForScript } from "@/utils/outlineTimeline";
 
 const router = express.Router();
 
@@ -39,6 +40,16 @@ interface ModeNormalizationResult {
 interface ProjectVideoContext {
   artStyle?: string | null;
   videoRatio?: string | null;
+}
+
+function formatClipPlanSummary(plan: ClipPlanResult) {
+  if (!plan.clips.length) return "无可用 clip plan";
+  return plan.clips
+    .map(
+      (clip) =>
+        `片段${clip.segmentId}-镜头${clip.shotIndex} [${clip.startSec}s-${clip.endSec}s / ${clip.durationSec}s] ${clip.videoPrompt || "未填写视频提示词"}`,
+    )
+    .join("\n");
 }
 
 function includesType(source: Set<ModelVideoType>, target: ModelVideoType[]) {
@@ -291,6 +302,12 @@ export default router.post(
       .where("id", projectId)
       .select("artStyle", "videoRatio")
       .first()) as ProjectVideoContext | undefined;
+    const clipPlan = await buildClipPlanForScript(scriptId);
+    if (clipPlan.issues.length > 0) {
+      return res
+        .status(400)
+        .send(error(`分镜时间轴校验失败：\n${clipPlan.issues.join("\n")}`));
+    }
     const aspectRatio = projectData?.videoRatio || "16:9";
     const capabilityRows = getCapabilityRows(
       aiConfigData.manufacturer!,
@@ -412,6 +429,7 @@ export default router.post(
       aiConfigData,
       normalizedMode.effectiveMode,
       projectData,
+      clipPlan,
     );
   },
 );
@@ -428,6 +446,7 @@ async function generateVideoAsync(
   aiConfigData: t_config,
   mode: RouteVideoMode,
   projectData?: ProjectVideoContext,
+  clipPlan?: ClipPlanResult,
 ) {
   try {
     const runtimeProjectData =
@@ -456,6 +475,9 @@ ${prompt}
 2. 保证视频连贯性、前后无矛盾
 3. 关键人物在画面中全部清晰显示，不得被遮挡、缺失或省略
 4. 画面真实、细致，无畸形、无模糊、无杂物、无多余人物、无文字、水印、logo
+
+分镜时间轴（必须严格遵守顺序、秒数与提示词）：
+${clipPlan ? formatClipPlanSummary(clipPlan) : "无"}
 `;
 
     const videoPath = await u.ai.video(

@@ -6,7 +6,15 @@ import { validateFields } from "@/middleware/middleware";
 
 const router = express.Router();
 
-// 获取分镜
+function parseRemark(remark?: string | null) {
+  if (!remark) return {};
+  try {
+    return JSON.parse(remark);
+  } catch {
+    return {};
+  }
+}
+
 export default router.post(
   "/",
   validateFields({
@@ -19,32 +27,38 @@ export default router.post(
     const assets = await u
       .db("t_assets")
       .where("scriptId", scriptId)
-      .where("type", "分镜")
-      .select("id", "name", "intro", "prompt", "filePath", "duration", "videoPrompt", "scriptId", "type", "segmentId", "shotIndex").orderBy("segmentId", "asc").orderBy("shotIndex", "asc");
+      .where("type", "??")
+      .select(
+        "id",
+        "name",
+        "intro",
+        "prompt",
+        "filePath",
+        "duration",
+        "videoPrompt",
+        "scriptId",
+        "type",
+        "segmentId",
+        "shotIndex",
+        "remark",
+      )
+      .orderBy("segmentId", "asc")
+      .orderBy("shotIndex", "asc");
 
     const assetsIds = assets.map((item: any) => item.id);
-
-    const generateImg = await u.db("t_image").whereIn("assetsId", assetsIds).where("type", "分镜").select("assetsId", "filePath");
-
-    for (const item of assets) {
-      if (!item.filePath) {
-        item.filePath = "";
-      }
-      item.filePath = await u.oss.getFileUrl(item.filePath ?? "");
-    }
+    const generateImg = await u.db("t_image").whereIn("assetsId", assetsIds).where("type", "??").select("assetsId", "filePath");
 
     const data = await Promise.all(
       assets.map(async (item: any) => {
         const imgArr = await Promise.all(
           generateImg
             .filter((img: any) => Number(img.assetsId) === Number(item.id))
-            .map(async (img: any) => {
-              return {
-                ...img,
-                filePath: await u.oss.getFileUrl(img.filePath ?? ""),
-              };
-            })
+            .map(async (img: any) => ({
+              ...img,
+              filePath: await u.oss.getFileUrl(img.filePath ?? ""),
+            })),
         );
+        const timeline = parseRemark(item.remark);
 
         return {
           id: item.id,
@@ -52,17 +66,22 @@ export default router.post(
           intro: item.intro,
           prompt: item.prompt,
           videoPrompt: item.videoPrompt,
-          filePath: item.filePath,
+          filePath: item.filePath ? await u.oss.getFileUrl(item.filePath) : "",
           type: item.type,
           scriptId: item.scriptId,
           duration: item.duration,
+          durationSec: timeline.durationSec ?? Number(item.duration || 0),
+          startSec: timeline.startSec ?? null,
+          endSec: timeline.endSec ?? null,
+          segmentTitle: timeline.segmentTitle ?? "",
+          dialogueExcerpt: timeline.dialogueExcerpt ?? "",
           segmentId: item.segmentId ?? 1,
           shotIndex: item.shotIndex ?? 1,
           generateImg: imgArr,
         };
-      })
+      }),
     );
 
     res.status(200).send(success(data));
-  }
+  },
 );

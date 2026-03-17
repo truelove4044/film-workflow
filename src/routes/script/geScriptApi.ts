@@ -3,23 +3,33 @@ import u from "@/utils";
 import { success } from "@/lib/responseFormat";
 import { z } from "zod";
 import { validateFields } from "@/middleware/middleware";
+import {
+  buildScriptSegments,
+  ensureOutlineScriptRow,
+  parseEpisodeData,
+} from "@/utils/outlineTimeline";
+
 const router = express.Router();
 
 interface Asset {
   id: number;
-  type: string; // "角色" 或其他
+  type: string;
   name: string;
   filePath: string;
+  intro?: string;
+  prompt?: string;
 }
 
 interface ScriptRow {
-  id: number;
-  name: string;
-  content: string;
+  id?: number;
+  name?: string;
+  content?: string;
   outlineId: number;
   projectId: number;
   data: string;
+  outlineEpisode: number;
 }
+
 export default router.post(
   "/",
   validateFields({
@@ -27,46 +37,62 @@ export default router.post(
   }),
   async (req, res) => {
     const { projectId } = req.body;
+    const outlineRows = await u.db("t_outline").where("projectId", projectId).orderBy("episode", "asc").select("*");
 
-    //查询剧本和大纲数据
+    for (const outline of outlineRows) {
+      const episode = parseEpisodeData(outline.data, outline.episode || 1);
+      await ensureOutlineScriptRow(projectId, Number(outline.id), `第${episode.episodeIndex}集 ${episode.title}`.trim());
+    }
+
     const rows: ScriptRow[] = await u
       .db("t_outline")
       .leftJoin("t_script", "t_outline.id", "t_script.outlineId")
       .where("t_outline.projectId", projectId)
-      .select("t_script.id", "t_script.name", "t_script.content", "t_script.outlineId", "t_script.projectId", "t_outline.data");
+      .orderBy("t_outline.episode", "asc")
+      .select(
+        "t_script.id",
+        "t_script.name",
+        "t_script.content",
+        "t_script.outlineId",
+        "t_script.projectId",
+        "t_outline.data",
+        "t_outline.episode as outlineEpisode",
+      );
 
-    // 查询所有的资产
     const assets: Asset[] = await u
       .db("t_assets")
       .where("projectId", projectId)
-      .andWhere("type", "<>", "分镜")
+      .andWhere("type", "<>", "??")
       .select("id", "type", "name", "filePath", "intro", "prompt");
 
-    const data = rows.map((item) => {
-      const parseData = JSON.parse(item.data);
-      const charData = parseData.characters.map((i: Asset) => i.name);
-      const propsData = parseData.props.map((i: Asset) => i.name);
-      const sceneData = parseData.scenes.map((i: Asset) => i.name);
-      return {
-        ...item,
-        element: [
-          ...assets.filter((i) => i.type == "道具" && propsData.includes(i.name)),
-          ...assets.filter((i) => i.type == "角色" && charData.includes(i.name)),
-          ...assets.filter((i) => i.type == "场景" && sceneData.includes(i.name)),
-        ],
-      };
-    });
+    const data = await Promise.all(
+      rows.map(async (item) => {
+        const outlineMeta = parseEpisodeData(item.data, item.outlineEpisode || 1);
+        const charData = outlineMeta.characters.map((asset) => asset.name);
+        const propsData = outlineMeta.props.map((asset) => asset.name);
+        const sceneData = outlineMeta.scenes.map((asset) => asset.name);
 
-    await Promise.all(
-      data.map(async (script) => {
+        const element = [
+          ...assets.filter((asset) => asset.type === "?" && propsData.includes(asset.name)),
+          ...assets.filter((asset) => asset.type === "閫" && charData.includes(asset.name)),
+          ...assets.filter((asset) => asset.type === "?箸" && sceneData.includes(asset.name)),
+        ];
+
         await Promise.all(
-          script.element.map(async (el) => {
-            el.filePath = el.filePath ? await u.oss.getFileUrl(el.filePath) : "";
-          })
+          element.map(async (asset) => {
+            asset.filePath = asset.filePath ? await u.oss.getFileUrl(asset.filePath) : "";
+          }),
         );
-      })
+
+        return {
+          ...item,
+          outlineMeta,
+          segments: buildScriptSegments(outlineMeta),
+          element,
+        };
+      }),
     );
 
     res.status(200).send(success(data));
-  }
+  },
 );

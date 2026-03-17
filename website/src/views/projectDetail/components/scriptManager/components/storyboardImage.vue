@@ -52,7 +52,13 @@
             <!-- 信息区域 -->
             <div class="info-wrapper">
               <h4 v-if="item.name" class="card-title">{{ item.name }}</h4>
+              <div class="time-meta">
+                <span>{{ item.startSec ?? 0 }}s-{{ item.endSec ?? item.durationSec ?? item.duration }}s</span>
+                <span>{{ item.durationSec ?? item.duration }} 秒</span>
+              </div>
+              <p v-if="item.segmentTitle" class="segment-title">{{ item.segmentTitle }}</p>
               <p class="card-desc">{{ item.prompt || "暂无描述" }}</p>
+              <p v-if="item.dialogueExcerpt" class="dialogue-excerpt">{{ item.dialogueExcerpt }}</p>
             </div>
           </div>
         </div>
@@ -88,6 +94,11 @@ interface Storyboard {
   prompt: string;
   filePath: string;
   duration: number;
+  durationSec?: number;
+  startSec?: number | null;
+  endSec?: number | null;
+  segmentTitle?: string;
+  dialogueExcerpt?: string;
   segmentId: number; // 片段ID
   shotIndex: number; // 镜头在片段内的序号
   generateImg: { assetsId: number; filePath: string }[];
@@ -379,11 +390,38 @@ function delStoryboardsFn(id: number, index: number, event: MouseEvent) {
           text-overflow: ellipsis;
         }
 
+        .time-meta {
+          display: flex;
+          gap: 8px;
+          margin-bottom: 8px;
+          font-size: 12px;
+          color: #7c3aed;
+          flex-wrap: wrap;
+        }
+
+        .segment-title {
+          margin: 0 0 8px;
+          font-size: 12px;
+          color: #4b5563;
+          font-weight: 600;
+        }
+
         .card-desc {
           margin: 0;
           font-size: 14px;
           color: #6b7280;
           line-height: 1.6;
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+        }
+
+        .dialogue-excerpt {
+          margin: 8px 0 0;
+          font-size: 12px;
+          color: #9ca3af;
+          line-height: 1.5;
           display: -webkit-box;
           -webkit-line-clamp: 2;
           -webkit-box-orient: vertical;

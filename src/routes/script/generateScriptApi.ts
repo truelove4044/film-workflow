@@ -3,25 +3,15 @@ import u from "@/utils";
 import { z } from "zod";
 import { error, success } from "@/lib/responseFormat";
 import { validateFields } from "@/middleware/middleware";
+import {
+  buildScriptSegments,
+  parseEpisodeData,
+  stringifyEpisodeData,
+} from "@/utils/outlineTimeline";
 import { generateScript } from "@/utils/generateScript";
-const router = express.Router();
-interface NovelChapter {
-  id: number;
-  reel: string;
-  chapter: string;
-  chapterData: string;
-  projectId: number;
-}
-function mergeNovelText(novelData: NovelChapter[]): string {
-  if (!Array.isArray(novelData)) return "";
-  return novelData
-    .map((chap) => {
-      return `${chap.chapter.trim()}\n\n${chap.chapterData.trim().replace(/\r?\n/g, "\n")}\n`;
-    })
-    .join("\n");
-}
 
-// 生成剧本
+const router = express.Router();
+
 export default router.post(
   "/",
   validateFields({
@@ -31,29 +21,33 @@ export default router.post(
   async (req, res) => {
     const { outlineId, scriptId } = req.body;
     const outlineData = await u.db("t_outline").where("id", outlineId).select("*").first();
-    if (!outlineData) return res.status(500).send(success({ message: "大纲为空" }));
-    const parameter = JSON.parse(outlineData.data!);
+    if (!outlineData) return res.status(500).send(success({ message: "憭抒熔銝箇征" }));
 
-    const novelData = (await u
-      .db("t_novel")
-      .whereIn("chapterIndex", parameter.chapterRange)
-      .where("projectId", outlineData.projectId)
-      .select("*")) as NovelChapter[];
+    const episode = parseEpisodeData(outlineData.data, outlineData.episode || 1);
 
-    if (novelData.length == 0) return res.status(500).send(success({ message: "原文为空" }));
-
-    const result: string = mergeNovelText(novelData);
     try {
-      const data = await generateScript(parameter ?? "", result ?? "");
-      if (!data) return res.status(500).send({ message: "生成剧本失败" });
-
+      const content = await generateScript(episode);
+      await u.db("t_outline").where("id", outlineId).update({
+        episode: episode.episodeIndex,
+        data: stringifyEpisodeData(episode),
+      });
       await u.db("t_script").where("id", scriptId).update({
-        content: data,
+        content,
+        name: `第${episode.episodeIndex}集 ${episode.title}`.trim(),
       });
 
-      res.status(200).send(success({ message: "生成剧本成功" }));
+      res.status(200).send(
+        success({
+          message: "???扳??",
+          data: {
+            content,
+            scriptSegments: buildScriptSegments(episode),
+            totalDurationSec: episode.totalDurationSec,
+          },
+        }),
+      );
     } catch (e) {
-      const errMsg = u.error(e).message || "生成剧本失败";
+      const errMsg = u.error(e).message || "???扳憭梯揖";
       res.status(500).send(error(errMsg));
     }
   },

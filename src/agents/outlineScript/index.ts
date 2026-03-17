@@ -4,6 +4,12 @@ import { EventEmitter } from "events";
 import { tool, ModelMessage } from "ai";
 import { z } from "zod";
 import type { DB } from "@/types/database";
+import {
+  type EpisodeDataV2,
+  normalizeEpisodeData,
+  parseEpisodeData,
+  stringifyEpisodeData,
+} from "@/utils/outlineTimeline";
 // ==================== 类型定义 ====================
 
 type AgentType = "AI1" | "AI2" | "director";
@@ -15,22 +21,7 @@ interface AssetItem {
   description: string;
 }
 
-interface EpisodeData {
-  episodeIndex: number;
-  title: string;
-  chapterRange: number[];
-  scenes: AssetItem[]; // 按 outline 出场顺序排列
-  characters: AssetItem[]; // 按 outline 出场顺序排列
-  props: AssetItem[]; // 按 outline 出场顺序排列
-  coreConflict: string;
-  outline: string; // 最高优先级，剧本生成的唯一权威
-  openingHook: string; // outline 第一句话的视觉化，开篇第一个镜头
-  keyEvents: string[]; // 4个元素：[起, 承, 转, 合]，严格按 outline 顺序
-  emotionalCurve: string; // 对应 keyEvents 各阶段
-  visualHighlights: string[]; // 按 outline 顺序排列的标志性镜头
-  endingHook: string; // outline 之后的悬念延伸
-  classicQuotes: string[];
-}
+type EpisodeData = EpisodeDataV2;
 
 // ==================== Schema 定义 ====================
 
@@ -191,7 +182,7 @@ export default class OutlineScript {
   private async insertOutlines(episodes: EpisodeData[], startEpisode: number) {
     const insertList = episodes.map((ep, idx) => ({
       projectId: this.projectId,
-      data: JSON.stringify({ ...ep, episodeIndex: startEpisode + idx }),
+      data: stringifyEpisodeData(normalizeEpisodeData({ ...ep, episodeIndex: startEpisode + idx }, startEpisode + idx)),
       episode: startEpisode + idx,
     }));
 
@@ -201,9 +192,9 @@ export default class OutlineScript {
 
   private async createEmptyScripts(outlineIds: Array<{ id: number; data: string }>) {
     const scripts = outlineIds.map((item) => {
-      const data = this.safeParseJson<Partial<EpisodeData>>(item.data, {});
+      const data = parseEpisodeData(item.data, item.id);
       return {
-        name: `第${data.episodeIndex ?? ""}集`,
+        name: `第${data.episodeIndex}集 ${data.title}`.trim(),
         content: "",
         projectId: this.projectId,
         outlineId: item.id,
@@ -247,7 +238,10 @@ export default class OutlineScript {
     await u
       .db("t_outline")
       .where({ id })
-      .update({ data: JSON.stringify(data) });
+      .update({
+        episode: data.episodeIndex,
+        data: stringifyEpisodeData(normalizeEpisodeData(data, data.episodeIndex)),
+      });
     this.refresh("outline");
     return true;
   }
@@ -306,7 +300,7 @@ ${formatList(ep.classicQuotes, (q) => q)}
     const episodes = records.map((r) => ({
       id: r.id,
       episode: r.episode,
-      ...this.safeParseJson<Partial<EpisodeData>>(r.data ?? "{}", {}),
+      ...parseEpisodeData(r.data ?? "{}", r.episode || 1),
     }));
 
     if (simplified) {
@@ -357,7 +351,7 @@ ${formatList(ep.classicQuotes, (q) => q)}
     const result = { characters: [] as AssetItem[], props: [] as AssetItem[], scenes: [] as AssetItem[] };
 
     for (const outline of outlines) {
-      const data = this.safeParseJson<Partial<EpisodeData>>(outline.data ?? "{}", {});
+      const data = parseEpisodeData(outline.data ?? "{}", 1);
       if (data.characters) result.characters.push(...data.characters);
       if (data.props) result.props.push(...data.props);
       if (data.scenes) result.scenes.push(...data.scenes);

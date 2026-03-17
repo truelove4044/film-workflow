@@ -17,6 +17,16 @@
             添加配置
           </a-button>
         </div>
+        <div v-if="clipPlan" class="timelineAlert" :class="{ invalid: clipPlan.issues.length > 0 }">
+          <div class="timelineAlertHead">
+            <span>分镜时间轴校验</span>
+            <span>总长 {{ clipPlan.totalDurationSec }} 秒 / {{ clipPlan.clips.length }} 个 clip</span>
+          </div>
+          <div v-if="clipPlan.issues.length" class="timelineIssues">
+            <div v-for="issue in clipPlan.issues" :key="issue" class="timelineIssue">{{ issue }}</div>
+          </div>
+          <div v-else class="timelineSuccess">时间轴校验通过，可进入影片生成。</div>
+        </div>
         <!-- 视频配置列表 Grid 布局 -->
         <div class="configList" v-if="videoConfigs.length > 0">
           <div v-for="(config, index) in videoConfigs" :key="config.id" class="configCard">
@@ -229,6 +239,7 @@ import { ref, watch, onMounted, computed } from "vue";
 import { message } from "ant-design-vue";
 import { PlusOutlined, DeleteOutlined, CloseOutlined } from "@ant-design/icons-vue";
 import draggable from "vuedraggable";
+import { storeToRefs } from "pinia";
 import mainElement from "@/views/projectDetail/components/assetsManager/components/mainElement.vue";
 import axios from "@/utils/axios";
 import store from "@/stores";
@@ -277,6 +288,18 @@ interface Storyboard {
   prompt: string;
   duration: number;
 }
+interface ClipPlanPreview {
+  totalDurationSec: number;
+  clips: {
+    segmentId: number;
+    shotIndex: number;
+    startSec: number;
+    endSec: number;
+    durationSec: number;
+    videoPrompt: string;
+  }[];
+  issues: string[];
+}
 const props = defineProps<{ scriptId: number }>();
 const storyboardShow = defineModel<boolean>({
   default: false,
@@ -291,6 +314,7 @@ const imageSelectorMode = ref<"start" | "end" | "multi">("start");
 const currentEditConfig = ref<VideoConfig | null>(null);
 const tempSelectedImages = ref<ImageItem[]>([]);
 const tempSelectedIds = ref<number[]>([]);
+const clipPlan = ref<ClipPlanPreview | null>(null);
 const manufacturerList = ref<{ model: string; manufacturer: string; id: number }[]>([]);
 const manufacturerAllRecord: Record<string, string> = Object.values(manufacturerConfigs).reduce((acc: Record<string, string>, c) => {
   acc[c.value as string] = c.label;
@@ -313,8 +337,23 @@ watch(storyboardShow, (v) => {
   if (v) {
     videoConfigs.value = [];
     getModelList();
+    fetchClipPlan();
   }
 });
+
+async function fetchClipPlan() {
+  if (!props.scriptId || props.scriptId === -1) {
+    clipPlan.value = null;
+    return;
+  }
+  try {
+    const res = await axios.post("/video/getVideoStoryboards", { scriptId: props.scriptId });
+    clipPlan.value = res.data;
+  } catch (error: any) {
+    clipPlan.value = null;
+    message.error(error?.message || "获取分镜时间轴失败");
+  }
+}
 
 function addVideoConfig() {
   const defaultManufacturer: string = availableManufacturers.value[0]?.manufacturer || "volcengine";
@@ -490,6 +529,15 @@ async function generateConfigPrompt(config: VideoConfig) {
   }
 }
 async function handleOk() {
+  await fetchClipPlan();
+  if (!clipPlan.value?.clips.length) {
+    message.warning("当前剧本还没有可用的分镜时间轴，无法添加视频配置");
+    return;
+  }
+  if (clipPlan.value.issues.length > 0) {
+    message.warning("请先修正分镜秒数与时间轴错误，再进行影片生成");
+    return;
+  }
   if (videoConfigs.value.length === 0) {
     message.warning("请至少添加一个视频配置");
     return;
@@ -569,6 +617,42 @@ function handleCancel() {
       font-size: 16px;
       font-weight: 600;
     }
+  }
+}
+
+.timelineAlert {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #f6ffed;
+  border: 1px solid #b7eb8f;
+
+  &.invalid {
+    background: #fff7e6;
+    border-color: #ffd591;
+  }
+
+  .timelineAlertHead {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .timelineIssues {
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+    color: #ad4e00;
+  }
+
+  .timelineSuccess {
+    margin-top: 8px;
+    font-size: 12px;
+    color: #389e0d;
   }
 }
 .configList {

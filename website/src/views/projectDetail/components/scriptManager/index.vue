@@ -65,6 +65,18 @@ interface Scripts {
   name: string;
   content: string;
   outlineId: number;
+  outlineMeta?: {
+    totalDurationSec: number;
+  };
+  segments?: {
+    segmentIndex: number;
+    title: string;
+    summary: string;
+    dialogue: string;
+    durationSec: number;
+    startSec: number;
+    endSec: number;
+  }[];
   element: {
     id: number;
     intro: string;
@@ -78,8 +90,25 @@ interface Scripts {
     videoPrompt: string;
   }[];
 }
+interface StoryboardItem {
+  id: number;
+  name: string;
+  intro: string;
+  prompt: string;
+  filePath: string;
+  duration: number;
+  durationSec: number;
+  startSec: number | null;
+  endSec: number | null;
+  segmentTitle: string;
+  dialogueExcerpt: string;
+  segmentId: number;
+  shotIndex: number;
+  generateImg: { assetsId: number; filePath: string }[];
+}
+
 const scripts = ref<Scripts[]>([]);
-const storyboardData = ref([]);
+const storyboardData = ref<StoryboardItem[]>([]);
 const selectScriptId = ref(-1);
 
 // 获取所有已选择的视频结果（用于批量下载）

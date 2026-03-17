@@ -112,7 +112,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from "vue";
+import { ref, computed, watch, onMounted } from "vue";
 import { message } from "ant-design-vue";
 import videoStore, { type VideoResult } from "@/stores/video";
 import { storeToRefs } from "pinia";

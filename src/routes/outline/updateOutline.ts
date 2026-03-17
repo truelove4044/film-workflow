@@ -3,9 +3,14 @@ import u from "@/utils";
 import { z } from "zod";
 import { success } from "@/lib/responseFormat";
 import { validateFields } from "@/middleware/middleware";
+import {
+  ensureOutlineScriptRow,
+  normalizeEpisodeData,
+  stringifyEpisodeData,
+} from "@/utils/outlineTimeline";
+
 const router = express.Router();
 
-// 更新大纲
 export default router.post(
   "/",
   validateFields({
@@ -14,11 +19,22 @@ export default router.post(
   }),
   async (req, res) => {
     const { id, data } = req.body;
+    const existing = await u.db("t_outline").where("id", id).first();
+    const episodeData = normalizeEpisodeData(JSON.parse(data), existing?.episode || id);
 
     await u.db("t_outline").where("id", id).update({
-      data,
+      episode: episodeData.episodeIndex,
+      data: stringifyEpisodeData(episodeData),
     });
 
-    res.status(200).send(success({ message: "更新大纲成功" }));
-  }
+    if (existing?.projectId) {
+      await ensureOutlineScriptRow(existing.projectId, id, `第${episodeData.episodeIndex}集 ${episodeData.title}`.trim());
+      await u
+        .db("t_script")
+        .where({ projectId: existing.projectId, outlineId: id })
+        .update({ name: `第${episodeData.episodeIndex}集 ${episodeData.title}`.trim() });
+    }
+
+    res.status(200).send(success({ message: "?湔憭抒熔??" }));
+  },
 );

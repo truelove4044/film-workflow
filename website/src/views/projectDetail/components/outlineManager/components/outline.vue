@@ -78,6 +78,14 @@
               </div>
             </t-col>
 
+            <t-col :span="6">
+              <div class="field-group">
+                <span class="field-icon">⏱️</span>
+                <span class="field-label">总时长</span>
+                <span class="field-value">{{ item.totalDurationSec || 0 }} 秒 / {{ item.segments.length }} 段</span>
+              </div>
+            </t-col>
+
             <t-col :span="12" v-if="item.outline">
               <div class="field-group outline-field">
                 <div class="field-header">
@@ -103,6 +111,20 @@
               <div class="tag-list">
                 <span v-for="(quote, i) in item.classicQuotes.slice(0, 2)" :key="i" class="custom-tag purple">{{ quote }}</span>
                 <span v-if="item.classicQuotes.length > 2" class="custom-tag more">+{{ item.classicQuotes.length - 2 }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="segment-preview" v-if="item.segments?.length">
+            <div class="segment-preview-title">段落时间轴</div>
+            <div class="segment-preview-list">
+              <div v-for="segment in item.segments" :key="segment.segmentIndex" class="segment-chip">
+                <div class="segment-chip-head">
+                  <span>段{{ segment.segmentIndex }}</span>
+                  <span>{{ segment.startSec }}s-{{ segment.endSec }}s</span>
+                </div>
+                <div class="segment-chip-title">{{ segment.title || `段落 ${segment.segmentIndex}` }}</div>
+                <div class="segment-chip-summary">{{ segment.summary || segment.dialogue || "暂无内容" }}</div>
               </div>
             </div>
           </div>
@@ -247,6 +269,73 @@
               </t-col>
             </t-row>
           </div>
+
+          <div class="form-section">
+            <div class="section-title">
+              <span class="section-icon">⏱️</span>
+              段落时间轴
+            </div>
+            <div class="segment-toolbar">
+              <div class="segment-total">总时长 {{ recalculateSegmentTimeline(editTemp).totalDurationSec }} 秒</div>
+              <t-button theme="primary" variant="outline" size="small" @click="addSegment">
+                <i-plus :size="14" />
+                新增段落
+              </t-button>
+            </div>
+            <div class="segment-editor-list">
+              <div v-for="(segment, segmentIndex) in editTemp.segments" :key="segmentIndex" class="segment-editor-card">
+                <div class="segment-editor-head">
+                  <div class="segment-editor-title">
+                    段落 {{ segmentIndex + 1 }}
+                    <span class="segment-timing">
+                      {{ recalculateSegmentTimeline(editTemp).segments[segmentIndex]?.startSec || 0 }}s -
+                      {{ recalculateSegmentTimeline(editTemp).segments[segmentIndex]?.endSec || 0 }}s
+                    </span>
+                  </div>
+                  <t-button
+                    variant="text"
+                    theme="danger"
+                    size="small"
+                    :disabled="editTemp.segments.length <= 1"
+                    @click="removeSegment(segmentIndex)">
+                    <i-delete :size="14" />
+                  </t-button>
+                </div>
+                <t-row :gutter="16">
+                  <t-col :span="8">
+                    <t-form-item :label="`段落标题 ${segmentIndex + 1}`">
+                      <t-input v-model="segment.title" placeholder="例如：开场冲突" />
+                    </t-form-item>
+                  </t-col>
+                  <t-col :span="4">
+                    <t-form-item label="时长(秒)">
+                      <t-input-number v-model="segment.durationSec" :min="1" theme="normal" style="width: 100%" />
+                    </t-form-item>
+                  </t-col>
+                  <t-col :span="6">
+                    <t-form-item label="画面重点">
+                      <t-input v-model="segment.visualFocus" placeholder="本段主要画面" />
+                    </t-form-item>
+                  </t-col>
+                  <t-col :span="6">
+                    <t-form-item label="关键节拍">
+                      <t-input v-model="segment.keyBeat" placeholder="本段关键事件" />
+                    </t-form-item>
+                  </t-col>
+                  <t-col :span="12">
+                    <t-form-item label="段落摘要">
+                      <t-textarea v-model="segment.summary" :autosize="{ minRows: 2, maxRows: 4 }" placeholder="交代本段剧情推进" />
+                    </t-form-item>
+                  </t-col>
+                  <t-col :span="12">
+                    <t-form-item label="对应台词">
+                      <t-textarea v-model="segment.dialogue" :autosize="{ minRows: 2, maxRows: 4 }" placeholder="可直接朗读的旁白或对白" />
+                    </t-form-item>
+                  </t-col>
+                </t-row>
+              </div>
+            </div>
+          </div>
         </t-form>
       </div>
     </t-dialog>
@@ -275,8 +364,28 @@ interface ObjectItem {
   description: string;
 }
 
+interface SegmentAssetRefs {
+  characters: string[];
+  props: string[];
+  scenes: string[];
+}
+
+interface OutlineSegment {
+  segmentIndex: number;
+  title: string;
+  summary: string;
+  dialogue: string;
+  durationSec: number;
+  startSec: number;
+  endSec: number;
+  visualFocus: string;
+  keyBeat: string;
+  assetRefs: SegmentAssetRefs;
+}
+
 interface Outline {
   id?: number;
+  version: number;
   episodeIndex: number;
   title: string;
   chapterRange: number[];
@@ -291,6 +400,8 @@ interface Outline {
   visualHighlights: string[];
   endingHook: string;
   classicQuotes: string[];
+  totalDurationSec: number;
+  segments: OutlineSegment[];
 }
 
 interface ChapterData {
@@ -311,7 +422,25 @@ const typeMap: Record<string, "role" | "scene" | "props"> = {
   props: "props",
 };
 
+const createEmptySegment = (segmentIndex = 1): OutlineSegment => ({
+  segmentIndex,
+  title: `段落 ${segmentIndex}`,
+  summary: "",
+  dialogue: "",
+  durationSec: 4,
+  startSec: Math.max(segmentIndex - 1, 0) * 4,
+  endSec: segmentIndex * 4,
+  visualFocus: "",
+  keyBeat: "",
+  assetRefs: {
+    characters: [],
+    props: [],
+    scenes: [],
+  },
+});
+
 const defaultOutline = (): Outline => ({
+  version: 2,
   episodeIndex: 0,
   title: "",
   chapterRange: [],
@@ -326,6 +455,8 @@ const defaultOutline = (): Outline => ({
   visualHighlights: [],
   endingHook: "",
   classicQuotes: [],
+  totalDurationSec: 4,
+  segments: [createEmptySegment()],
 });
 
 const rawData = ref<{ id: number; episode: number; data: string }[]>([]);
@@ -343,12 +474,40 @@ const displayData = computed<Outline[]>(() =>
   rawData.value.map((item) => {
     try {
       const parsed = JSON.parse(item.data);
-      return { ...defaultOutline(), ...parsed, id: item.id, episodeIndex: parsed.episodeIndex || item.episode };
+      return {
+        ...defaultOutline(),
+        ...parsed,
+        id: item.id,
+        episodeIndex: parsed.episodeIndex || item.episode,
+      };
     } catch {
       return { ...defaultOutline(), id: item.id, episodeIndex: item.episode };
     }
   }),
 );
+
+function recalculateSegmentTimeline(outline: Outline) {
+  let cursor = 0;
+  const segments = (outline.segments?.length ? outline.segments : [createEmptySegment()]).map((segment, index) => {
+    const durationSec = Math.max(1, Math.round(Number(segment.durationSec) || 1));
+    const startSec = cursor;
+    const endSec = startSec + durationSec;
+    cursor = endSec;
+    return {
+      ...createEmptySegment(index + 1),
+      ...segment,
+      segmentIndex: index + 1,
+      durationSec,
+      startSec,
+      endSec,
+      title: segment.title || `段落 ${index + 1}`,
+    };
+  });
+  return {
+    segments,
+    totalDurationSec: segments.at(-1)?.endSec || 0,
+  };
+}
 
 function getAssetLabel(key: string): string {
   return assetLabelMap[key] || key;
@@ -406,6 +565,16 @@ function handleAddOutline() {
   editModalVisible.value = true;
 }
 
+function addSegment() {
+  if (!editTemp.value) return;
+  editTemp.value.segments.push(createEmptySegment(editTemp.value.segments.length + 1));
+}
+
+function removeSegment(index: number) {
+  if (!editTemp.value || editTemp.value.segments.length <= 1) return;
+  editTemp.value.segments.splice(index, 1);
+}
+
 function cancelEdit() {
   editModalVisible.value = false;
   editingIndex.value = null;
@@ -416,7 +585,14 @@ function cancelEdit() {
 async function saveEdit() {
   if (!editTemp.value) return;
   try {
-    const data = JSON.stringify(editTemp.value);
+    const timeline = recalculateSegmentTimeline(editTemp.value);
+    const payload = {
+      ...editTemp.value,
+      version: 2,
+      totalDurationSec: timeline.totalDurationSec,
+      segments: timeline.segments,
+    };
+    const data = JSON.stringify(payload);
     if (isAddMode.value) {
       await axios.post("/outline/addOutline", { projectId: projectId.value, data });
       MessagePlugin.success("新增成功");
@@ -704,6 +880,57 @@ defineExpose({ getData });
   }
 }
 
+.segment-preview {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--td-component-stroke);
+
+  .segment-preview-title {
+    margin-bottom: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--td-text-color-primary);
+  }
+
+  .segment-preview-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px;
+  }
+
+  .segment-chip {
+    padding: 12px;
+    background: var(--td-bg-color-secondarycontainer);
+    border-radius: 10px;
+    border: 1px solid var(--td-component-stroke);
+  }
+
+  .segment-chip-head {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 6px;
+    font-size: 12px;
+    color: var(--td-text-color-secondary);
+  }
+
+  .segment-chip-title {
+    margin-bottom: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--td-text-color-primary);
+  }
+
+  .segment-chip-summary {
+    color: var(--td-text-color-secondary);
+    font-size: 12px;
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+}
+
 .custom-tag {
   display: inline-flex;
   align-items: center;
@@ -803,6 +1030,51 @@ defineExpose({ getData });
       margin-left: 12px;
     }
   }
+}
+
+.segment-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+
+  .segment-total {
+    font-size: 13px;
+    color: var(--td-text-color-secondary);
+  }
+}
+
+.segment-editor-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.segment-editor-card {
+  padding: 16px;
+  background: var(--td-bg-color-container);
+  border-radius: 10px;
+  border: 1px solid var(--td-component-stroke);
+}
+
+.segment-editor-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.segment-editor-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+}
+
+.segment-timing {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--td-text-color-secondary);
 }
 
 .chapter-selector {

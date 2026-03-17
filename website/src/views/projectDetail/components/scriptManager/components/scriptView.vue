@@ -90,6 +90,23 @@
                 </div>
 
                 <div class="section-body">
+                  <div v-if="item.outlineMeta || item.segments?.length" class="timeline-panel">
+                    <div class="timeline-summary">
+                      <span>总时长 {{ item.outlineMeta?.totalDurationSec || 0 }} 秒</span>
+                      <span>{{ item.segments?.length || 0 }} 段</span>
+                    </div>
+                    <div class="timeline-list" v-if="item.segments?.length">
+                      <div v-for="segment in item.segments" :key="`${item.id}-${segment.segmentIndex}`" class="timeline-item">
+                        <div class="timeline-item-head">
+                          <span>段{{ segment.segmentIndex }}</span>
+                          <span>{{ segment.startSec }}s-{{ segment.endSec }}s</span>
+                        </div>
+                        <div class="timeline-item-title">{{ segment.title || `段落 ${segment.segmentIndex}` }}</div>
+                        <div class="timeline-item-text">{{ segment.summary || segment.dialogue || "暂无内容" }}</div>
+                      </div>
+                    </div>
+                  </div>
+
                   <!-- 加载状态 -->
                   <div v-if="scriptGenerateLoading[item.id]" class="loading-state">
                     <div class="loading-spinner"></div>
@@ -183,6 +200,18 @@ interface Script {
   content: string;
   outlineId: number;
   element: Element[];
+  outlineMeta?: {
+    totalDurationSec: number;
+  };
+  segments?: {
+    segmentIndex: number;
+    title: string;
+    summary: string;
+    dialogue: string;
+    durationSec: number;
+    startSec: number;
+    endSec: number;
+  }[];
 }
 
 const emit = defineEmits<{
@@ -284,6 +313,7 @@ async function handleGenerate() {
   try {
     await axios.post("/script/generateScriptApi", { outlineId, scriptId: id });
     message.success("生成剧本成功");
+    await fetchScripts();
     emit("getScriptData");
   } catch (err: any) {
     message.error(err.message || "生成剧本失败");
@@ -581,8 +611,62 @@ $line-height: 28px;
         }
       }
 
-      .section-body {
-        padding: 18px;
+    .section-body {
+      padding: 18px;
+    }
+  }
+
+    .timeline-panel {
+      margin-bottom: 18px;
+      padding: 16px;
+      background: linear-gradient(135deg, #fcf7ff 0%, #f8fbff 100%);
+      border: 1px solid rgba(147, 51, 234, 0.1);
+      border-radius: 12px;
+
+      .timeline-summary {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 12px;
+        font-size: 13px;
+        color: #6b7280;
+      }
+
+      .timeline-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 12px;
+      }
+
+      .timeline-item {
+        padding: 12px;
+        background: #fff;
+        border: 1px solid #eee7ff;
+        border-radius: 10px;
+      }
+
+      .timeline-item-head {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 6px;
+        font-size: 12px;
+        color: #7c3aed;
+      }
+
+      .timeline-item-title {
+        margin-bottom: 6px;
+        font-size: 13px;
+        font-weight: 600;
+        color: #1f2937;
+      }
+
+      .timeline-item-text {
+        font-size: 12px;
+        color: #6b7280;
+        line-height: 1.5;
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
       }
     }
 

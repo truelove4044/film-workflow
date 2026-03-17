@@ -1,4 +1,5 @@
 import { Knex } from "knex";
+import { parseEpisodeData, stringifyEpisodeData } from "@/utils/outlineTimeline";
 
 export default async (knex: Knex): Promise<void> => {
   const addColumn = async (table: string, column: string, type: string) => {
@@ -20,6 +21,62 @@ export default async (knex: Knex): Promise<void> => {
     if (await knex.schema.hasColumn(table, column)) {
       await knex.schema.alterTable(table, (t) => {
         (t as any)[type](column).alter();
+      });
+    }
+  };
+
+  const syncOutlineTimelineData = async () => {
+    const hasOutlineTable = await knex.schema.hasTable("t_outline");
+    const hasScriptTable = await knex.schema.hasTable("t_script");
+    if (!hasOutlineTable) return;
+
+    const outlines = await knex("t_outline").select("id", "projectId", "episode", "data");
+    if (!outlines.length) return;
+
+    let nextScriptId = 0;
+    if (hasScriptTable) {
+      const maxScriptIdRow: any = await knex("t_script").max("id as maxId").first();
+      nextScriptId = maxScriptIdRow?.maxId || 0;
+    }
+
+    for (const outline of outlines) {
+      const episode = parseEpisodeData(outline.data, outline.episode || outline.id || 1);
+      const normalizedData = stringifyEpisodeData(episode);
+      const updatePayload: Record<string, any> = {};
+
+      if (outline.episode !== episode.episodeIndex) {
+        updatePayload.episode = episode.episodeIndex;
+      }
+      if (outline.data !== normalizedData) {
+        updatePayload.data = normalizedData;
+      }
+      if (Object.keys(updatePayload).length > 0) {
+        await knex("t_outline").where({ id: outline.id }).update(updatePayload);
+      }
+
+      if (!hasScriptTable || !outline.projectId) continue;
+
+      const scriptName = `第${episode.episodeIndex}集 ${episode.title}`.trim();
+      const existingScript = await knex("t_script")
+        .where({ projectId: outline.projectId, outlineId: outline.id })
+        .first();
+
+      if (existingScript) {
+        if (existingScript.name !== scriptName) {
+          await knex("t_script")
+            .where({ id: existingScript.id })
+            .update({ name: scriptName });
+        }
+        continue;
+      }
+
+      nextScriptId += 1;
+      await knex("t_script").insert({
+        id: nextScriptId,
+        name: scriptName,
+        content: "",
+        projectId: outline.projectId,
+        outlineId: outline.id,
       });
     }
   };
@@ -119,4 +176,6 @@ export default async (knex: Knex): Promise<void> => {
   if (needInsert.length) {
     await knex("t_aiModelMap").insert(needInsert);
   }
+
+  await syncOutlineTimelineData();
 };

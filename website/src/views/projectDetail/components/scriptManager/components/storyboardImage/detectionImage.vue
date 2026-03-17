@@ -102,7 +102,27 @@
             <!-- 时长 -->
             <vxe-column field="duration" title="时长(秒)" width="100" align="center">
               <template #default="{ row }">
-                <span class="duration-text">{{ row.duration || "-" }}</span>
+                <span class="duration-text">{{ row.durationSec ?? row.duration ?? "-" }}</span>
+              </template>
+            </vxe-column>
+
+            <vxe-column field="startSec" title="起始" width="90" align="center">
+              <template #default="{ row }">
+                <span class="duration-text">{{ row.startSec ?? "-" }}</span>
+              </template>
+            </vxe-column>
+
+            <vxe-column field="endSec" title="结束" width="90" align="center">
+              <template #default="{ row }">
+                <span class="duration-text">{{ row.endSec ?? "-" }}</span>
+              </template>
+            </vxe-column>
+
+            <vxe-column field="segmentTitle" title="片段" min-width="150">
+              <template #default="{ row }">
+                <div class="prompt-cell">
+                  <span class="prompt-text" :title="row.segmentTitle">{{ row.segmentTitle || `片段 ${row.segmentId}` }}</span>
+                </div>
               </template>
             </vxe-column>
           </vxe-table>
@@ -141,7 +161,12 @@ type ImageDataItem = {
   id: string;
   videoPrompt: string;
   prompt: string;
-  duration: string;
+  duration: string | number;
+  durationSec?: number;
+  startSec?: number | null;
+  endSec?: number | null;
+  segmentTitle?: string;
+  dialogueExcerpt?: string;
   projectId: number;
   filePath: string;
   type: string;
@@ -217,6 +242,11 @@ function updateRowsByIds(responseData: any[], statusKey: "isSuperScored" | "isVi
       if (updated.videoPrompt !== undefined) row.videoPrompt = updated.videoPrompt;
       if (updated.prompt !== undefined) row.prompt = updated.prompt;
       if (updated.duration !== undefined) row.duration = updated.duration;
+      if (updated.durationSec !== undefined) row.durationSec = updated.durationSec;
+      if (updated.startSec !== undefined) row.startSec = updated.startSec;
+      if (updated.endSec !== undefined) row.endSec = updated.endSec;
+      if (updated.segmentTitle !== undefined) row.segmentTitle = updated.segmentTitle;
+      if (updated.dialogueExcerpt !== undefined) row.dialogueExcerpt = updated.dialogueExcerpt;
       if (updated.filePath !== undefined) row.filePath = updated.filePath;
       if (updated.type !== undefined) row.type = updated.type;
       if (updated.name !== undefined) row.name = updated.name;
